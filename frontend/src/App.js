@@ -10,6 +10,8 @@ import PolicePage from "./pages/PolicePage";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ProtectedRoute from "./components/ProtectedRoute";
+import TouristPortal from "./pages/TouristPortal";
+import "./styles/tourist.css";
 
 function App() {
   return (
@@ -17,6 +19,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/tourist/*" element={<TouristPortal />} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
         <Route path="/efir" element={<ProtectedRoute><EFIRPage /></ProtectedRoute>} />

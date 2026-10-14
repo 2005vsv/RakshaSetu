@@ -53,7 +53,7 @@ def test_create_zones():
             "is_active": True
         }
     ]
-    
+
     created_zones = []
     for zone in zones:
         try:
