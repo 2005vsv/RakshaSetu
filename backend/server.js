@@ -16,11 +16,13 @@ const authRoutes = require("./src/routes/auth");
 const alertsRoutes = require("./src/routes/alerts");
 const efirRoutes = require("./src/routes/efir");
 const inspectorsRoutes = require("./src/routes/inspectors");
+const tripsRoutes = require("./src/routes/trips");
 
 app.use("/auth", authRoutes);
 app.use("/alerts", alertsRoutes);
 app.use("/efir", efirRoutes);
 app.use("/inspectors", inspectorsRoutes);
+app.use("/trips", tripsRoutes);
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {

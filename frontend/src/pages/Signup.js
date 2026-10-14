@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/admin.css";
+import { nodeApi, setAuthToken } from "../services/api";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -15,9 +16,8 @@ export default function Signup() {
     setLoading(true);
     setError("");
     try {
-      if (!name || !email || !password) throw new Error("Fill all fields");
-      // Dummy signup: instantly "create" and login
-      localStorage.setItem("admin_token", "dummy-jwt-token");
+      const { data } = await nodeApi.post("/auth/register", { name, email, password, role: "admin" });
+      setAuthToken(data.token);
       navigate("/");
     } catch (err) {
       setError(err.message || "Signup failed");

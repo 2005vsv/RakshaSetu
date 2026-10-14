@@ -1,5 +1,6 @@
 import React from "react";
 import "../styles/admin.css";
+import { clearAuthToken } from "../services/api";
 
 export default function AdminLayout({ children }) {
   return (
@@ -18,7 +19,7 @@ export default function AdminLayout({ children }) {
             <button
               className="btn"
               onClick={() => {
-                localStorage.removeItem("admin_token");
+                clearAuthToken();
                 window.location.href = "/login";
               }}
             >Logout</button>

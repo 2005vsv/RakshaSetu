@@ -6,12 +6,15 @@ const NODE_API_BASE_URL = process.env.REACT_APP_NODE_API_BASE_URL || "http://loc
 
 export const geoApi = axios.create({ baseURL: GEO_API_BASE_URL });
 export const nodeApi = axios.create({ baseURL: NODE_API_BASE_URL });
+let authToken = null;
+export const setAuthToken = (token) => { authToken = token; };
+export const clearAuthToken = () => { authToken = null; };
+export const hasAuthToken = () => Boolean(authToken);
 
 const attachAuth = (config) => {
-  const token = localStorage.getItem("admin_token");
-  if (token) {
+  if (authToken) {
     config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.Authorization = `Bearer ${authToken}`;
   }
   return config;
 };
@@ -47,6 +50,8 @@ export const endpointsNode = {
   assignAlert: (alertId) => `/alerts/${alertId}/assign`,
 };
 
-export default { geoApi, nodeApi, endpointsGeo, endpointsNode };
+const apiClient = { geoApi, nodeApi, endpointsGeo, endpointsNode };
+
+export default apiClient;
 
 

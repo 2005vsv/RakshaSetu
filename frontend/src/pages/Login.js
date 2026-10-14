@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/admin.css";
+import { nodeApi, setAuthToken } from "../services/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,9 +15,8 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
-      // Dummy auth: accept any non-empty credentials
-      if (!email || !password) throw new Error("Enter email and password");
-      localStorage.setItem("admin_token", "dummy-jwt-token");
+      const { data } = await nodeApi.post("/auth/login", { email, password });
+      setAuthToken(data.token);
       navigate("/");
     } catch (err) {
       setError(err.message || "Login failed");
