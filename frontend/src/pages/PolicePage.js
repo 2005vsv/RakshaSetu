@@ -1,103 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
-import apiClient from "../services/api";
+import { nodeApi } from "../services/api";
 
+const level = (a) => ["high", "high_priority", "sos", "panic"].includes(String(a.severity || a.alert_type || a.type || "").toLowerCase()) ? "high" : ["medium", "warning", "geofence"].includes(String(a.severity || a.alert_type || "").toLowerCase()) ? "medium" : "low";
 export default function PolicePage() {
-  const [alerts, setAlerts] = useState([]);
-  const [query, setQuery] = useState("");
-  const [onlyUnresolved, setOnlyUnresolved] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    // Use Node.js API instead of FastAPI
-    apiClient.nodeApi
-      .get("/alerts")
-      .then((r) => {
-        if (!isMounted) return;
-        const data = r.data;
-        const list = Array.isArray(data) ? data : (Array.isArray(data?.alerts) ? data.alerts : []);
-        // Filter for unresolved alerts if needed
-        const filteredList = onlyUnresolved ? list.filter(alert => !alert.is_resolved) : list;
-        setAlerts(filteredList);
-      })
-      .catch(() => setAlerts([]));
-    return () => { isMounted = false; };
-  }, [onlyUnresolved]);
-
-  const rows = useMemo(() => {
-    let r = alerts;
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      r = r.filter(a => `${a.alert_type || a.type || ""} ${a.message || ""}`.toLowerCase().includes(q));
-    }
-    return r;
-  }, [alerts, query]);
-
-  const markResolved = (id) => {
-    // For now, just update the local state since we don't have a PUT endpoint in Node.js API
-    setAlerts(prev => prev.map(a => (a._id === id || a.id === id ? { ...a, is_resolved: true } : a)));
-    // TODO: Add PUT endpoint to Node.js API for updating alerts
-  };
-
-  const badgeClass = (sev) => {
-    const s = (sev || "").toLowerCase();
-    if (s === "high_priority" || s === "high") return "badge high";
-    if (s === "warning" || s === "medium") return "badge medium";
-    return "badge low";
-  };
-
-  return (
-    <AdminLayout>
-      <div className="panel">
-        <div className="panel-header">Police - Live Alerts</div>
-        <div className="panel-body">
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-            <input
-              placeholder="Search type or message..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ flex: 1, background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}
-            />
-            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#e5e7eb" }}>
-              <input type="checkbox" checked={onlyUnresolved} onChange={(e) => setOnlyUnresolved(e.target.checked)} />
-              Only unresolved
-            </label>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Severity</th>
-                <th>Message</th>
-                <th>Assigned</th>
-                <th>When</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((a) => (
-                <tr key={a.id || a._id}>
-                  <td>{a.alert_type || a.type || ""}</td>
-                  <td><span className={badgeClass((a.alert_type || a.severity || "").toLowerCase())}>{a.alert_type || a.severity || "low"}</span></td>
-                  <td>{a.message || a.description}</td>
-                  <td>{a.assigned_station_name ? `Assigned to ${a.assigned_station_name}` : "Unassigned"}</td>
-                  <td>{a.timestamp ? new Date(a.timestamp).toLocaleString() : a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</td>
-                  <td>
-                    {!a.is_resolved && (
-                      <button className="btn" onClick={() => markResolved(a.id)}>
-                        Mark Resolved
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </AdminLayout>
-  );
+  const [alerts, setAlerts] = useState([]); const [query, setQuery] = useState(""); const [onlyUnresolved, setOnlyUnresolved] = useState(true); const [error, setError] = useState(""); const [busy, setBusy] = useState("");
+  const load = useCallback(async () => { setError(""); try { const { data } = await nodeApi.get("/alerts"); setAlerts(Array.isArray(data) ? data : data.alerts || []); } catch (e) { setError(e.response?.data?.error || "Could not load response incidents. Check login and API availability."); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const rows = useMemo(() => alerts.filter((a) => (!onlyUnresolved || (!a.is_resolved && a.status !== "resolved")) && `${a.alert_type || a.type || ""} ${a.message || ""} ${a.assigned_station_name || ""}`.toLowerCase().includes(query.toLowerCase())), [alerts, query, onlyUnresolved]);
+  const resolve = async (alert) => { const id = alert._id || alert.id; setBusy(id); setError(""); try { const { data } = await nodeApi.put(`/alerts/${id}/resolve`); setAlerts((items) => items.map((item) => (item._id || item.id) === id ? { ...item, ...data, is_resolved: true, status: "resolved" } : item)); } catch (e) { setError(e.response?.data?.error || "Unable to resolve this alert."); } finally { setBusy(""); } };
+  return <AdminLayout><main className="ops-page"><header className="ops-heading"><div><p className="ops-kicker">FIELD RESPONSE</p><h1>Police operations</h1><p>Monitor incidents, confirm station assignment, and close resolved cases.</p></div><button className="ops-button" onClick={load}>Refresh incidents</button></header>{error && <div className="ops-banner error">{error}</div>}<section className="ops-stats"><article><span>Visible incidents</span><b>{rows.length}</b></article><article><span>Unresolved</span><b>{alerts.filter((a) => !a.is_resolved).length}</b></article><article><span>Assigned</span><b>{alerts.filter((a) => a.assigned_station_name).length}</b></article></section><section className="ops-card"><div className="ops-card-head"><div><h2>Incident response queue</h2><p>Refresh to retrieve the latest reports from the API.</p></div><div className="ops-filters"><input placeholder="Search incidents" value={query} onChange={(e) => setQuery(e.target.value)} /><label className="ops-check"><input type="checkbox" checked={onlyUnresolved} onChange={(e) => setOnlyUnresolved(e.target.checked)} /> Unresolved only</label></div></div><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Incident</th><th>Priority</th><th>Assigned station</th><th>Reported</th><th>Response</th></tr></thead><tbody>{rows.map((a) => { const id = a._id || a.id; return <tr key={id}><td><b>{a.type || a.alert_type || "Safety alert"}</b><small>{a.message || a.description || "No details supplied"}</small></td><td><span className={`ops-pill ${level(a)}`}>{level(a)}</span></td><td>{a.assigned_station_name || "Awaiting assignment"}</td><td>{new Date(a.createdAt || a.timestamp).toLocaleString()}</td><td>{a.is_resolved || a.status === "resolved" ? <span className="ops-pill resolved">Resolved</span> : <button className="ops-button subtle" disabled={busy === id} onClick={() => resolve(a)}>{busy === id ? "Saving…" : "Mark resolved"}</button>}</td></tr>; })}{!rows.length && <tr><td colSpan="5" className="ops-empty">{error ? "Incident feed unavailable" : "No incidents in this queue."}</td></tr>}</tbody></table></div></section></main></AdminLayout>;
 }
-
-
-

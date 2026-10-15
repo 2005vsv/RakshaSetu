@@ -1,82 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import apiClient from "../services/api";
 
 export default function EFIRPage() {
-  const [items, setItems] = useState([]);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    apiClient.nodeApi
-      .get(apiClient.endpointsNode.efirPending)
-      .then((r) => {
-        if (!isMounted) return;
-        setItems(Array.isArray(r.data) ? r.data : []);
-      })
-      .catch(() => { if (isMounted) setItems([]); })
-      .finally(() => { if (isMounted) setLoading(false); });
-    return () => { isMounted = false; };
-  }, []);
-
-  const verify = async (id) => {
-    try { await apiClient.nodeApi.post(apiClient.endpointsNode.efirVerify(id)); } catch (_) {}
-    setItems(prev => prev.filter(i => i._id !== id));
-  };
-
-  const rows = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.toLowerCase();
-    return items.filter(i => `${i.description} ${i.filedBy?.name || i.filedBy || ""}`.toLowerCase().includes(q));
-  }, [items, query]);
-
-  return (
-    <AdminLayout>
-      <div className="panel">
-        <div className="panel-header">E-FIR</div>
-        <div className="panel-body">
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <input
-              placeholder="Search description or filer..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ flex: 1, background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}
-            />
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th>Filed By</th>
-                <th>Phone</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: 16, color: '#6b7280' }}>
-                    {loading ? 'Loading E-FIRs…' : 'No E-FIRs found'}
-                  </td>
-                </tr>
-              )}
-              {rows.map((i) => (
-                <tr key={i._id}>
-                  <td>{i.description}</td>
-                  <td>{i.filedBy?.name || i.filedBy || "—"}</td>
-                  <td>{i.phone || "—"}</td>
-                  <td>{i.status}</td>
-                  <td>
-                    <button className="btn" onClick={() => verify(i._id)}>Verify</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </AdminLayout>
-  );
+  const [items, setItems] = useState([]); const [inspectors, setInspectors] = useState([]); const [query, setQuery] = useState(""); const [status, setStatus] = useState("all"); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState("");
+  const load = useCallback(async () => { setLoading(true); setError(""); try { const [efirs, people] = await Promise.all([apiClient.nodeApi.get(apiClient.endpointsNode.efirPending), apiClient.nodeApi.get("/inspectors", { params: { available: true } }).catch(() => ({ data: [] }))]); setItems(Array.isArray(efirs.data) ? efirs.data : []); setInspectors(Array.isArray(people.data) ? people.data : []); } catch (e) { setError(e.response?.data?.error || "Could not load E-FIR records. Check that the Node API is running."); } finally { setLoading(false); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const rows = useMemo(() => items.filter((item) => (status === "all" || item.status === status) && `${item.description || ""} ${item.filedBy?.name || item.filedBy || ""} ${item.phone || ""}`.toLowerCase().includes(query.toLowerCase())), [items, status, query]);
+  const act = async (item, action, inspector) => { setBusy(item._id); setError(""); setNotice(""); try { let response; if (action === "verify") response = await apiClient.nodeApi.post(apiClient.endpointsNode.efirVerify(item._id)); else if (action === "assign") response = await apiClient.nodeApi.post(`/efir/assign/${item._id}`, { inspectorId: inspector._id || inspector.id, inspectorName: inspector.name }); else response = await apiClient.nodeApi.post(`/efir/send/${item._id}`); setItems((list) => list.map((record) => record._id === item._id ? response.data : record)); setNotice(action === "send" ? (response.data.smsResult?.success ? "Status update sent by SMS." : response.data.smsResult ? `Status updated, but SMS failed: ${response.data.smsResult.error || "provider rejected the message"}` : "Status updated; SMS credentials are not configured.") : action === "assign" ? "Inspector assigned." : "E-FIR verified."); } catch (e) { setError(e.response?.data?.error || `Could not ${action} this E-FIR.`); } finally { setBusy(""); } };
+  return <AdminLayout><main className="ops-page"><header className="ops-heading"><div><p className="ops-kicker">CASE INTAKE</p><h1>E-FIR review</h1><p>Validate reports, assign an available inspector, and send a status acknowledgement.</p></div><button className="ops-button" onClick={load}>Refresh records</button></header>{error && <div className="ops-banner error">{error}</div>}{notice && <div className="ops-banner success">{notice}</div>}<section className="ops-stats"><article><span>Records in workflow</span><b>{items.length}</b></article><article><span>Awaiting verification</span><b>{items.filter((item) => item.status === "pending").length}</b></article><article><span>Assigned</span><b>{items.filter((item) => item.status === "assigned").length}</b></article></section><section className="ops-card"><div className="ops-card-head"><div><h2>Incoming reports</h2><p>Review case details and move each report through the intake workflow.</p></div><div className="ops-filters"><input placeholder="Search filer, phone, or details" value={query} onChange={(e) => setQuery(e.target.value)} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option>{["pending", "verified", "assigned", "sent"].map((value) => <option key={value}>{value}</option>)}</select></div></div><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Report</th><th>Complainant</th><th>Filed</th><th>Workflow</th><th>Actions</th></tr></thead><tbody>{rows.map((item) => <tr key={item._id}><td><b>{item.description}</b><small>{item.geoLocation?.nearestCity || (item.geoLocation ? `${item.geoLocation.latitude.toFixed(4)}, ${item.geoLocation.longitude.toFixed(4)}` : "Location unavailable")}</small></td><td>{item.filedBy}<small>{item.phone}</small></td><td>{new Date(item.createdAt).toLocaleDateString()}</td><td><span className={`ops-pill ${item.status === "pending" ? "medium" : item.status === "sent" ? "resolved" : "low"}`}>{item.status}</span>{item.assignedInspector?.name && <small>{item.assignedInspector.name}</small>}</td><td className="ops-actions">{item.status === "pending" && <button className="ops-button subtle" disabled={busy === item._id} onClick={() => act(item, "verify")}>Verify</button>}{["verified", "assigned"].includes(item.status) && <select aria-label="Assign inspector" value="" disabled={busy === item._id || !inspectors.length} onChange={(e) => { const inspector = inspectors.find((person) => (person._id || person.id) === e.target.value); if (inspector) act(item, "assign", inspector); }}><option value="">{inspectors.length ? "Assign inspector" : "No inspectors"}</option>{inspectors.map((person) => <option key={person._id || person.id} value={person._id || person.id}>{person.name}</option>)}</select>}{item.status === "assigned" && <button className="ops-button" disabled={busy === item._id} onClick={() => act(item, "send")}>Send update</button>}</td></tr>)}{!rows.length && <tr><td colSpan="5" className="ops-empty">{loading ? "Loading case records…" : error ? "E-FIR service unavailable" : "No reports match these filters."}</td></tr>}</tbody></table></div></section></main></AdminLayout>;
 }

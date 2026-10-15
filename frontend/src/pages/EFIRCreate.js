@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import { createEfir } from "../services/api";
+import { useNavigate } from "react-router-dom";
 
 export default function EFIRCreate() {
+  const navigate = useNavigate();
   const [filedBy, setFiledBy] = useState("");
   const [phone, setPhone] = useState("");
   const [description, setDescription] = useState("");
@@ -20,13 +22,19 @@ export default function EFIRCreate() {
     }
     setSubmitting(true);
     try {
-      await createEfir({ filedBy, phone, description });
-      setSuccess("E-FIR created successfully");
+      if (!navigator.geolocation) throw new Error("Location access is unavailable in this browser. Contact emergency services for urgent help.");
+      const geoLocation = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
+        (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+        () => reject(new Error("Location permission is required to file an accurate E-FIR.")),
+        { enableHighAccuracy: true, timeout: 12000 }
+      ));
+      const report = await createEfir({ filedBy, phone, description, geoLocation });
+      setSuccess(`E-FIR received. Reference: ${report.touristId}`);
       setFiledBy("");
       setPhone("");
       setDescription("");
-    } catch (_) {
-      setError("Failed to create E-FIR. Try again.");
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Failed to create E-FIR. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -69,8 +77,8 @@ export default function EFIRCreate() {
             {error ? <div style={{ color: "#f87171" }}>{error}</div> : null}
             {success ? <div style={{ color: "#34d399" }}>{success}</div> : null}
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" type="submit" disabled={submitting}>{submitting ? "Submitting..." : "Create"}</button>
-              <button className="btn" type="button" onClick={() => window.history.back()} style={{ background: "#374151" }}>Cancel</button>
+              <button className="ops-button" type="submit" disabled={submitting}>{submitting ? "Submitting..." : "Create E-FIR"}</button>
+              <button className="ops-button subtle" type="button" onClick={() => navigate("/efir")}>Cancel</button>
             </div>
           </form>
         </div>

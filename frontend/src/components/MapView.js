@@ -22,11 +22,11 @@ export default function MapView({ center = [26.2, 92.9], markers = [] }) {
           // GeoJSON format: [lng, lat]
           lng = m.geoLocation.coordinates[0];
           lat = m.geoLocation.coordinates[1];
-        } else if (m.geoLocation && m.geoLocation.lat && m.geoLocation.lng) {
+        } else if (m.geoLocation && m.geoLocation.lat != null && m.geoLocation.lng != null) {
           // Object format: {lat, lng}
           lat = m.geoLocation.lat;
           lng = m.geoLocation.lng;
-        } else if (m.latitude && m.longitude) {
+        } else if (m.latitude != null && m.longitude != null) {
           // Direct properties
           lat = m.latitude;
           lng = m.longitude;
@@ -48,6 +48,7 @@ export default function MapView({ center = [26.2, 92.9], markers = [] }) {
                 {m.message || m.description || 'No description'}
                 <br />
                 <small>Severity: {m.severity || 'Unknown'}</small>
+                {m.link ? <><br /><a href={m.link}>Open related incident</a></> : null}
               </div>
             </Popup>
           </Marker>

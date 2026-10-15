@@ -1,50 +1,6 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import "../styles/admin.css";
-import { nodeApi, setAuthToken } from "../services/api";
+import React from "react";
+import { Link } from "react-router-dom";
 
 export default function Signup() {
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const { data } = await nodeApi.post("/auth/register", { name, email, password, role: "admin" });
-      setAuthToken(data.token);
-      navigate("/");
-    } catch (err) {
-      setError(err.message || "Signup failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="admin-shell" style={{ alignItems: "center", justifyContent: "center" }}>
-      <div className="panel" style={{ width: 420 }}>
-        <div className="panel-header">Admin Sign Up</div>
-        <div className="panel-body">
-          {error ? <div style={{ color: "#991b1b", background: "#fee2e2", border: "1px solid var(--border)", padding: 8, borderRadius: 8, marginBottom: 8 }}>{error}</div> : null}
-          <form onSubmit={onSubmit}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <input placeholder="Full Name" value={name} onChange={(e)=>setName(e.target.value)} style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }} />
-              <input placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }} />
-              <input type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }} />
-              <button className="btn" disabled={loading} type="submit">{loading ? "Creating..." : "Create Account"}</button>
-              <div style={{ color: "#9ca3af" }}>Have an account? <Link to="/login">Sign in</Link></div>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+  return <main className="auth-page"><section className="auth-card"><p className="eyebrow">AUTHORIZED OPERATIONS ACCESS</p><h1>Administrator accounts are provisioned securely</h1><p>Public sign-up cannot grant administrator privileges. Ask an existing administrator to create your account from the management console.</p><Link className="primary" to="/login">Administrator sign-in</Link><Link to="/tourist">Tourist registration</Link></section></main>;
 }
-
-

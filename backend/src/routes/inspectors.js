@@ -3,8 +3,7 @@ const router = express.Router();
 const controller = require('../controllers/inspectorController');
 const auth = require('../middleware/auth');
 
-// Public GET for listing inspectors (no auth) to ensure dropdown loads in admin UI
-router.get('/', controller.listAvailable);
+router.get('/', require('../middleware/auth'), (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ error: 'Administrator access required' }), controller.listAvailable);
 
 module.exports = router;
 

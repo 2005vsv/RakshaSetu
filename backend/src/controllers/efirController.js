@@ -1,6 +1,5 @@
 const Efir = require("../models/Efir");
 const mongoose = require("mongoose");
-const { generateNortheastIndiaCoordinates, generateTouristAreaCoordinates } = require('../utils/geoUtils');
 
 // List all pending EFIRs
 exports.listPending = async (req, res) => {
@@ -84,6 +83,7 @@ exports.sendCopy = async (req, res) => {
     }
 
     // Optional: ensure an inspector is assigned before sending
+    if (!efir.assignedInspector?.id) return res.status(400).json({ error: "Assign an inspector before sending the acknowledgement." });
     const assignedName = efir.assignedInspector?.name || "Assigned Officer";
 
     // Generate a temporary human-friendly EFIR number for SMS (not persisted)
@@ -133,14 +133,15 @@ exports.reject = async (req, res) => {
 // Create EFIR (allows tourists to file reports)
 exports.createEfir = async (req, res) => {
   try {
-    const { filedBy, description, phone, useRandomLocation = true } = req.body;
+    const { filedBy, description, phone } = req.body;
     if (!filedBy || !description || !phone) {
       return res.status(400).json({ error: 'filedBy, description and phone are required' });
     }
 
-    const geoLocation = useRandomLocation
-      ? generateTouristAreaCoordinates()
-      : (req.body.geoLocation || generateTouristAreaCoordinates());
+    const geoLocation = req.body.geoLocation;
+    if (!geoLocation || !Number.isFinite(Number(geoLocation.latitude)) || !Number.isFinite(Number(geoLocation.longitude)) || Math.abs(Number(geoLocation.latitude)) > 90 || Math.abs(Number(geoLocation.longitude)) > 180) {
+      return res.status(400).json({ error: "Share a valid location before filing this E-FIR." });
+    }
 
     const touristId = 'T' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9).toUpperCase();
 
@@ -148,11 +149,12 @@ exports.createEfir = async (req, res) => {
       filedBy,
       description,
       phone,
+      ...(req.user.role === "user" ? { email: req.user.email } : {}),
       touristId,
       geoLocation: {
-        latitude: geoLocation.latitude,
-        longitude: geoLocation.longitude,
-        nearestCity: geoLocation.nearestCity
+        latitude: Number(geoLocation.latitude),
+        longitude: Number(geoLocation.longitude),
+        nearestCity: geoLocation.nearestCity || undefined
       },
       status: 'pending'
     });
@@ -167,12 +169,14 @@ exports.createEfir = async (req, res) => {
 
 exports.getEfirById = async (req, res) => {
   try {
-    const tourist_id = req.params.tourist_id;
+    const tourist_id = req.params.id;
     // if (!mongoose.Types.ObjectId.isValid(tourist_id)) {
     //   return res.status(400).json({ error: "Invalid EFIR ID." });
     // }
-    const item = await Efir.find({ touristId: tourist_id }).sort({ createdAt: -1 });
-    if (!item) {
+    const item = req.user.role === "admin"
+      ? await Efir.find({ touristId: tourist_id }).sort({ createdAt: -1 })
+      : await Efir.find({ touristId: tourist_id, email: req.user.email }).sort({ createdAt: -1 });
+    if (!item.length) {
       return res.status(404).json({ error: "EFIR not found." });
     }
     res.json(item);

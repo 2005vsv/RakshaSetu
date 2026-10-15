@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/admin.css";
-import { nodeApi, setAuthToken } from "../services/api";
+import { nodeApi } from "../services/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -9,6 +9,8 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [demoEnabled, setDemoEnabled] = useState(false);
+  useEffect(() => { Promise.resolve(nodeApi.get("/auth/demo-status")).then(({ data }) => setDemoEnabled(Boolean(data?.enabled))).catch(() => setDemoEnabled(false)); }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -16,13 +18,24 @@ export default function Login() {
     setError("");
     try {
       const { data } = await nodeApi.post("/auth/login", { email, password });
-      setAuthToken(data.token);
+      if (data.user?.role !== "admin") throw new Error("This account is not authorized for the response console.");
       navigate("/");
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(err.response?.data?.error || err.message || "Login failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const demoSignIn = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await nodeApi.post("/auth/demo-login", { role: "admin" });
+      navigate("/");
+    } catch (err) {
+      setError(err.response?.data?.error || "Admin demo sign-in is unavailable.");
+    } finally { setLoading(false); }
   };
 
   return (
@@ -36,6 +49,8 @@ export default function Login() {
               <input placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }} />
               <input type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }} />
               <button className="btn" disabled={loading} type="submit">{loading ? "Signing in..." : "Sign In"}</button>
+              <Link to="/forgot-password">Forgot password?</Link>
+              {demoEnabled ? <button className="ops-button subtle" disabled={loading} type="button" onClick={demoSignIn}>Continue with admin demo</button> : null}
               <div style={{ color: "#9ca3af" }}>No account? <Link to="/signup">Sign up</Link></div>
             </div>
           </form>

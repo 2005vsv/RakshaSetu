@@ -9,6 +9,7 @@ const GeoLocationSchema = new mongoose.Schema({
 
 const EfirSchema = new mongoose.Schema({
   filedBy: { type: String, required: true },
+  email: { type: String, default: "", index: true },
   description: { type: String, required: true },
   phone: { type: String, required: true },
   touristId: { type: String, required: true, index: true },

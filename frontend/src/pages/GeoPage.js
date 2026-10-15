@@ -1,169 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
-import { MapContainer, TileLayer, Circle, Polygon, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Polygon, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import apiClient from "../services/api";
-import L from "leaflet";
+import { nodeApi } from "../services/api";
+
+const geoObject = (geometry) => { if (!geometry) return null; if (typeof geometry === "object") return geometry; try { return JSON.parse(geometry); } catch { return null; } };
+const ringsFor = (zone) => { const geo = geoObject(zone.geometry || zone.geojson); if (!geo) return []; if (geo.type === "Polygon") return geo.coordinates.map((ring) => ring.map(([lng, lat]) => [lat, lng])); if (geo.type === "MultiPolygon") return geo.coordinates.flatMap((polygon) => polygon.map((ring) => ring.map(([lng, lat]) => [lat, lng]))); return []; };
 
 export default function GeoPage() {
-  const center = useMemo(() => [26.2, 92.9], []);
-  const [zones, setZones] = useState([]);
-  const mapRef = useRef(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    apiClient.geoApi
-      .get("/zones/geo", { params: { limit: 200 } })
-      .then((r) => {
-        if (!isMounted) return;
-        const list = Array.isArray(r.data?.zones) ? r.data.zones : [];
-        setZones(list);
-        // Fit bounds to all zones
-        try {
-          const points = [];
-          list.forEach((z) => {
-            try {
-              const gj = JSON.parse(z.geometry);
-              if (gj.type === "Polygon") {
-                gj.coordinates[0].forEach(([lng, lat]) => points.push([lat, lng]));
-              } else if (gj.type === "MultiPolygon") {
-                gj.coordinates.forEach((poly) => poly[0].forEach(([lng, lat]) => points.push([lat, lng])));
-              }
-            } catch (_) {}
-          });
-          if (points.length && mapRef.current) {
-            const bounds = L.latLngBounds(points);
-            mapRef.current.fitBounds(bounds.pad(0.1));
-          }
-        } catch (_) {}
-      })
-      .catch(() => setZones([]));
-    return () => { isMounted = false; };
-  }, []);
-  return (
-    <AdminLayout>
-      <div className="grid">
-        <div className="panel">
-          <div className="panel-header">Tourist Density Map</div>
-          <div className="panel-body" style={{ height: 520 }}>
-            <MapContainer center={center} zoom={7} style={{ height: "100%", width: "100%" }} whenCreated={(m)=>{ mapRef.current = m; }}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              {zones.map((z) => {
-                try {
-                  const gj = JSON.parse(z.geometry);
-                  // Expecting Polygon coordinates [[[lng,lat],...]]
-                  const polys = [];
-                  if (gj.type === "Polygon") {
-                    polys.push(gj.coordinates[0].map(([lng, lat]) => [lat, lng]));
-                  } else if (gj.type === "MultiPolygon") {
-                    gj.coordinates.forEach((poly) => {
-                      if (poly && poly[0]) polys.push(poly[0].map(([lng, lat]) => [lat, lng]));
-                    });
-                  }
-                  const color = z.zone_type === "restricted" ? "#ef4444" : (z.zone_type === "risky" ? "#f59e0b" : "#22c55e");
-                  return polys.map((coords, idx) => (
-                    <Polygon key={`${z.id}-${idx}`} positions={coords} pathOptions={{ color, weight: 3, fillColor: color, fillOpacity: 0.35 }}>
-                      <Popup>
-                        <div style={{ minWidth: 180 }}>
-                          <div style={{ fontWeight: 700 }}>{z.name}</div>
-                          <div style={{ textTransform: "capitalize" }}>{z.zone_type}</div>
-                          <div>{z.description}</div>
-                        </div>
-                      </Popup>
-                    </Polygon>
-                  ));
-                } catch (_) {
-                  return null;
-                }
-              })}
-            </MapContainer>
-            <p style={{ marginTop: 12 }}>Only geofences returned by the configured service are shown.</p>
-          </div>
-        </div>
-        <div className="panel">
-          <div className="panel-header">Create Geofence</div>
-          <div className="panel-body">
-            <GeofenceForm onCreated={() => {
-              apiClient.geoApi
-                .get("/zones/geo", { params: { limit: 200 } })
-                .then((r) => setZones(Array.isArray(r.data?.zones) ? r.data.zones : []))
-                .catch(() => {});
-            }} />
-          </div>
-        </div>
-      </div>
-    </AdminLayout>
-  );
+  const center = useMemo(() => [20.5937, 78.9629], []); const [zones, setZones] = useState([]); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const [notice, setNotice] = useState(""); const [draft, setDraft] = useState({ name: "", description: "", zone_type: "restricted", wkt_polygon: "" });
+  const load = useCallback(async () => { setError(""); try { const { data } = await nodeApi.get("/zones", { params: { only_active: false } }); setZones(Array.isArray(data?.zones) ? data.zones : []); } catch (e) { setError(e.response?.data?.error || "Could not load geofences from MongoDB."); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const points = zones.flatMap(ringsFor).flat(); const mapCenter = points.length ? points[0] : center;
+  const create = async (event) => { event.preventDefault(); setSaving(true); setNotice(""); setError(""); try { await nodeApi.post("/zones", { ...draft, is_active: true }); setNotice("Zone saved in MongoDB and included in browser location checks."); setDraft({ ...draft, name: "", description: "", wkt_polygon: "" }); await load(); } catch (e) { setError(e.response?.data?.error || "Could not save geofence. Check that the polygon is closed and valid."); } finally { setSaving(false); } };
+  const deactivate = async (zone) => { setError(""); try { await nodeApi.delete(`/zones/${zone._id || zone.id}`); setNotice(`${zone.name} deactivated.`); await load(); } catch (e) { setError(e.response?.data?.error || "Could not deactivate this zone."); } };
+  return <AdminLayout><main className="ops-page"><header className="ops-heading"><div><p className="ops-kicker">GEOSPATIAL SAFETY</p><h1>Geofence control</h1><p>Manage safe, risky, and restricted boundaries used by MongoDB location checks.</p></div><button className="ops-button" onClick={load}>Refresh zones</button></header>{error && <div className="ops-banner error">{error}</div>}{notice && <div className="ops-banner success">{notice}</div>}<section className="ops-stats"><article><span>Active boundaries</span><b>{zones.filter((z) => z.is_active !== false).length}</b></article><article><span>Restricted</span><b>{zones.filter((z) => z.zone_type === "restricted" && z.is_active !== false).length}</b></article><article><span>Risky</span><b>{zones.filter((z) => z.zone_type === "risky" && z.is_active !== false).length}</b></article></section><section className="ops-card"><div className="ops-card-head"><div><h2>Boundary map</h2><p>Restricted areas are red, risky areas amber, and safe areas green.</p></div></div><MapContainer center={mapCenter} zoom={7} style={{ height: 500, width: "100%" }}><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />{zones.filter((zone) => zone.is_active !== false).flatMap((zone) => ringsFor(zone).map((ring, index) => { const color = zone.zone_type === "restricted" ? "#dc3545" : zone.zone_type === "risky" ? "#df8a18" : "#15805d"; return <Polygon key={`${zone._id || zone.id}-${index}`} positions={ring} pathOptions={{ color, fillColor: color, fillOpacity: 0.22 }}><Popup><b>{zone.name}</b><br />{zone.zone_type}<br />{zone.description}</Popup></Polygon>; }))}</MapContainer></section><section className="ops-card"><div className="ops-card-head"><div><h2>Configured boundaries</h2><p>Deactivation preserves the boundary record while excluding it from location checks.</p></div></div><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Name</th><th>Type</th><th>Description</th><th>State</th><th>Action</th></tr></thead><tbody>{zones.map((zone) => <tr key={zone._id || zone.id}><td><b>{zone.name}</b></td><td><span className={`ops-pill ${zone.zone_type === "restricted" ? "high" : zone.zone_type === "risky" ? "medium" : "resolved"}`}>{zone.zone_type}</span></td><td>{zone.description || "—"}</td><td>{zone.is_active === false ? "Inactive" : "Active"}</td><td>{zone.is_active === false ? "—" : <button className="ops-button subtle" onClick={() => deactivate(zone)}>Deactivate</button>}</td></tr>)}{!zones.length && <tr><td colSpan="5" className="ops-empty">{error ? "MongoDB zone records unavailable" : "No boundaries have been configured yet."}</td></tr>}</tbody></table></div></section><section className="ops-card"><div className="ops-card-head"><div><h2>Create a boundary</h2><p>Enter a closed WKT polygon. Coordinates use longitude then latitude.</p></div></div><form className="ops-form" onSubmit={create}><label>Name<input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label><label>Risk class<select value={draft.zone_type} onChange={(e) => setDraft({ ...draft, zone_type: e.target.value })}><option value="safe">Safe</option><option value="risky">Risky</option><option value="restricted">Restricted</option></select></label><label className="wide">Description<input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label><label className="wide">WKT polygon<textarea required rows="4" placeholder="POLYGON((longitude latitude, ..., first-point))" value={draft.wkt_polygon} onChange={(e) => setDraft({ ...draft, wkt_polygon: e.target.value })} /></label><button className="ops-button" disabled={saving}>{saving ? "Saving zone…" : "Create boundary"}</button></form></section></main></AdminLayout>;
 }
-
-
-function GeofenceForm({ onCreated }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [zoneType, setZoneType] = useState("restricted");
-  const [wkt, setWkt] = useState("POLYGON((92.899 26.199, 92.903 26.199, 92.903 26.203, 92.899 26.203, 92.899 26.199))");
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
-
-  const submit = () => {
-    setMsg("");
-    if (!name.trim() || !wkt.trim()) {
-      setMsg("Name and WKT are required");
-      return;
-    }
-    setSaving(true);
-    apiClient.geoApi.post("/zones", {
-      name,
-      description,
-      zone_type: zoneType,
-      wkt_polygon: wkt,
-      is_active: true
-    }).then(() => {
-      setMsg("Created successfully");
-      setName("");
-      setDescription("");
-      setZoneType("restricted");
-      if (typeof onCreated === "function") onCreated();
-    }).catch((e) => {
-      setMsg("Failed to create zone");
-    }).finally(() => setSaving(false));
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {msg && <div style={{ color: "#e5e7eb" }}>{msg}</div>}
-      <input
-        placeholder="Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}
-      />
-      <input
-        placeholder="Description (optional)"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}
-      />
-      <select
-        value={zoneType}
-        onChange={(e) => setZoneType(e.target.value)}
-        style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}
-      >
-        <option value="safe">safe</option>
-        <option value="risky">risky</option>
-        <option value="restricted">restricted</option>
-      </select>
-      <textarea
-        rows={6}
-        placeholder="WKT POLYGON((lng lat, ...))"
-        value={wkt}
-        onChange={(e) => setWkt(e.target.value)}
-        style={{ background: "#ffffff", color: "#0f172a", border: "1px solid var(--border)", borderRadius: 8, padding: 8, resize: "vertical" }}
-      />
-      <button className="btn" onClick={submit} disabled={saving}>
-        {saving ? "Creating..." : "Create Zone"}
-      </button>
-    </div>
-  );
-}
-

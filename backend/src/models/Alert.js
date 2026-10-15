@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const AlertSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
+  geofenceZone: { type: mongoose.Schema.Types.ObjectId, ref: "Zone", default: null, index: true },
   type: String,
   severity: String,
   message: String,
