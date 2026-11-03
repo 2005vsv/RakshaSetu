@@ -1,9 +1,8 @@
 import { io } from "socket.io-client";
-
-const rawSocketUrl = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5001";
-const SOCKET_URL = rawSocketUrl.startsWith("http") ? rawSocketUrl : `https://${rawSocketUrl}`;
+import { getBackendBaseUrl } from "./api";
 
 export const connectRealtime = () => {
+  const SOCKET_URL = getBackendBaseUrl();
   const token = typeof window !== "undefined"
     ? (localStorage.getItem("safevoyage_admin_token") || localStorage.getItem("safevoyage_tourist_token") || "")
     : "";

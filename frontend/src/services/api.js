@@ -1,8 +1,18 @@
 import axios from "axios";
 
 // The web app reads and writes operational data through the MongoDB-backed Node API.
-const rawUrl = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5001";
-const NODE_API_BASE_URL = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
+export const getBackendBaseUrl = () => {
+  if (process.env.REACT_APP_NODE_API_BASE_URL) {
+    const raw = process.env.REACT_APP_NODE_API_BASE_URL;
+    return raw.startsWith("http") ? raw : `https://${raw}`;
+  }
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    return "https://rakshasetu-backend-4775.onrender.com";
+  }
+  return "http://localhost:5001";
+};
+
+const NODE_API_BASE_URL = getBackendBaseUrl();
 
 export const nodeApi = axios.create({ baseURL: NODE_API_BASE_URL, withCredentials: true });
 

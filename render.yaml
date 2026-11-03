@@ -27,6 +27,8 @@ services:
         value: admin123
       - key: FRONTEND_ORIGIN
         value: "*"
+      - key: DEMO_ACCOUNTS_ENABLED
+        value: "true"
 
   # -----------------------------------------------------------
   # 2. RakshaSetu Frontend (React Admin & Police Web Portal)
@@ -44,8 +46,5 @@ services:
         destination: /index.html
     envVars:
       - key: REACT_APP_NODE_API_BASE_URL
-        fromService:
-          type: web
-          name: rakshasetu-backend
-          property: host
+        value: https://rakshasetu-backend-4775.onrender.com
 
