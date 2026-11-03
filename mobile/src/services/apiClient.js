@@ -38,7 +38,7 @@ export const setStoredBaseUrl = async (url) => {
 
 export const apiClient = axios.create({
   baseURL: getDefaultBaseUrl(),
-  timeout: 15000,
+  timeout: 45000,
   headers: {
     'Content-Type': 'application/json',
     'X-Portal': 'tourist',
