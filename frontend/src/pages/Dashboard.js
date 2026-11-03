@@ -10,7 +10,19 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState("");
   const load = useCallback(() => nodeApi.get("/incidents/admin/metrics").then(({ data }) => { setMetrics(data); setError(""); }).catch((err) => setError(err.response?.data?.error || "Operations metrics are unavailable.")), []);
-  useEffect(() => { load(); const socket = connectRealtime(); socket.on("incident:new", load); socket.on("incident:updated", load); socket.on("trip:updated", load); socket.on("tourist:registered", load); return () => socket.disconnect(); }, [load]);
+  useEffect(() => {
+    load();
+    const socket = connectRealtime();
+    socket.on("incident:new", load);
+    socket.on("incident:updated", load);
+    socket.on("trip:updated", load);
+    socket.on("tourist:registered", load);
+    const poll = setInterval(load, 4000);
+    return () => {
+      clearInterval(poll);
+      socket.disconnect();
+    };
+  }, [load]);
   return (
     <AdminLayout>
       <div className="ops-home">

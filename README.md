@@ -14,6 +14,7 @@ Formerly SafeVoyage. This web application connects the tourist portal and operat
 
 - React web frontend: `frontend/`
 - Node/Express + Socket.IO API: `backend/`
+- React Native / Expo mobile app: `mobile/`
 - MongoDB Atlas or a configured MongoDB deployment is required. The web application's account, trip, location, geofence, incident, and audit data is persisted through this API.
 - The legacy FastAPI/PostGIS implementation under `sih-backend/` is not called by the current web app. Its location simulator is intentionally not part of development startup.
 - App data and auth tokens are not written to browser localStorage or sessionStorage. Browser geolocation is permission-based and cannot be guaranteed while the tab is closed or suspended.

@@ -22,6 +22,8 @@ sih-backend/*.log
 # Build & Cache
 build/
 dist/
+.expo/
+*.keystore
 .pnp
 .pnp.js
 .cache/

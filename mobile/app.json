@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "RakshaSetu Tourist",
+    "slug": "rakshasetu-tourist",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "RakshaSetu needs your location to keep you safe and alert you if you enter high-risk or restricted zones.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RakshaSetu monitors your safety in real-time during your trips and dispatches help if you trigger SOS.",
+        "NSMicrophoneUsageDescription": "RakshaSetu needs microphone access so you can speak your safety and emergency questions to Raksha AI."
+      }
+    },
+    "android": {
+      "package": "com.rakshasetu.tourist",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CALL_PHONE",
+        "VIBRATE",
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a",
+        "foregroundImage": "./assets/icon.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}

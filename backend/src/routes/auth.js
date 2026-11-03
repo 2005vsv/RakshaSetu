@@ -6,7 +6,14 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const rateLimit = require("express-rate-limit").rateLimit;
 const AuditLog = require("../models/AuditLog");
-const authAttempts = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: "Too many account requests. Wait 15 minutes and try again." } });
+const authAttempts = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
+  message: { error: "Too many account requests. Wait 15 minutes and try again." },
+});
 const recordFailedLogin = async (identity) => AuditLog.create({ action: "auth.failed", targetType: "account-hash", details: { identityHash: crypto.createHash("sha256").update(String(identity || "").trim().toLowerCase()).digest("hex").slice(0, 16) } }).catch(() => {});
 
 const secret = () => process.env.JWT_SECRET || "devsecret";
@@ -35,7 +42,7 @@ const issueSession = (res, user) => {
   const token = tokenFor(user);
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `safevoyage_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure}`);
-  return { user: publicUser(user) };
+  return { user: publicUser(user), token };
 };
 const demosEnabled = () => process.env.DEMO_ACCOUNTS_ENABLED === "true" || process.env.NODE_ENV !== "production";
 const ensureDemoAccount = async (role) => {
@@ -63,6 +70,56 @@ const ensureDemoAccount = async (role) => {
   if (!user || (user.role === "admin") !== admin) throw new Error("Could not provision the configured demo account");
   return user;
 };
+
+/**
+ * POST /auth/signup
+ * Provision an operations administrator account
+ */
+router.post("/signup", authAttempts, async (req, res) => {
+  try {
+    const { name, email, password, adminRole = "super_admin" } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: "Name, email, and password are required" });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: "Password must contain at least 6 characters" });
+    }
+    if (!/^\S+@\S+\.\S+$/.test(String(email))) {
+      return res.status(400).json({ error: "Enter a valid email address" });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    if (await User.exists({ email: cleanEmail })) {
+      return res.status(409).json({ error: "An account with this email already exists" });
+    }
+
+    const validRoles = ["super_admin", "monitoring_officer", "responder"];
+    const chosenRole = validRoles.includes(adminRole) ? adminRole : "super_admin";
+
+    const user = await User.create({
+      username: cleanEmail,
+      email: cleanEmail,
+      name: name.trim(),
+      password: await hashPassword(password),
+      role: "admin",
+      adminRole: chosenRole,
+      accountStatus: "active"
+    });
+
+    await AuditLog.create({
+      actor: user._id,
+      action: "admin.registered",
+      targetType: "user",
+      targetId: user._id.toString(),
+      details: { email: user.email, adminRole: user.adminRole }
+    }).catch(() => {});
+
+    res.status(201).json(issueSession(res, user));
+  } catch (err) {
+    console.error("Admin registration failed:", err.message);
+    if (err.code === 11000) return res.status(409).json({ error: "An account with this email already exists" });
+    res.status(500).json({ error: "Could not create administrator account" });
+  }
+});
 
 router.post("/register", authAttempts, async (req, res) => {
   try {
@@ -109,6 +166,10 @@ router.post("/tourist-login", authAttempts, async (req, res) => {
       await recordFailedLogin(email);
       return res.status(401).json({ error: "Email or password is incorrect" });
     }
+    if (!user.digitalId) {
+      user.digitalId = `DIG-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+      await user.save();
+    }
     if (!user.password.startsWith("$2")) { user.password = await hashPassword(password); await user.save(); }
     res.json(issueSession(res, user));
   } catch (err) {
@@ -121,7 +182,16 @@ router.get("/me", require("../middleware/auth"), async (req, res) => {
   if (mongoose.connection.readyState !== 1) return res.status(503).json({ error: "Database is unavailable. Check Atlas network access and try again." });
   const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(publicUser(user));
+  if (user.role === "user" && !user.digitalId) {
+    user.digitalId = `DIG-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+    await user.save();
+  }
+  const pub = publicUser(user);
+  if (req.user.role === "admin") {
+    pub.role = "admin";
+    pub.adminRole = req.user.adminRole || "super_admin";
+  }
+  res.json(pub);
 });
 
 router.patch("/me", require("../middleware/auth"), async (req, res) => {

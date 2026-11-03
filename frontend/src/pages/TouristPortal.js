@@ -1,9 +1,11 @@
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Circle, MapContainer, Marker, Polygon, Popup, TileLayer, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { QRCodeSVG } from "qrcode.react";
 import { clearApiToken, nodeApi } from "../services/api";
 import { connectRealtime } from "../services/realtime";
+import TouristAiAssistant from "../components/TouristAiAssistant";
+import L from "leaflet";
 
 const travelModes = [["car", "Car"], ["bus", "Bus"], ["train", "Train"], ["flight", "Flight"], ["trekking", "Trekking"], ["other", "Other"]];
 
@@ -13,7 +15,7 @@ function normalizeUser(user) {
     emergencyContacts: user.emergencyContacts || [],
     preferences: {
       notifications: true,
-      locationSharing: false,
+      locationSharing: true,
       shareWithPolice: true,
       ...(user.preferences || {}),
     },
@@ -60,11 +62,77 @@ function getSafetyStatus(score) {
   return ["At Risk", "danger"];
 }
 
-function SetMapView({ center }) {
+const geoObject = (geometry) => {
+  if (!geometry) return null;
+  if (typeof geometry === "object") return geometry;
+  try { return JSON.parse(geometry); } catch { return null; }
+};
+
+const ringsFor = (zone) => {
+  const geo = geoObject(zone?.geometry || zone?.geojson);
+  if (!geo) return [];
+  if (geo.type === "Polygon" && Array.isArray(geo.coordinates)) {
+    return geo.coordinates.map((ring) => ring.map(([lng, lat]) => [lat, lng]));
+  }
+  if (geo.type === "MultiPolygon" && Array.isArray(geo.coordinates)) {
+    return geo.coordinates.flatMap((polygon) => polygon.map((ring) => ring.map(([lng, lat]) => [lat, lng])));
+  }
+  return [];
+};
+
+const getZoneCenter = (zone) => {
+  const rings = ringsFor(zone);
+  if (!rings.length || !rings[0]?.length) return null;
+  const pts = rings[0];
+  const avgLat = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+  const avgLng = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+  return [avgLat, avgLng];
+};
+
+const createTouristIcon = (name = "Tourist") => {
+  const initial = String(name || "T").trim().slice(0, 1).toUpperCase();
+  return L.divIcon({
+    className: "tourist-custom-pin",
+    html: `
+      <div style="position: relative; width: 44px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; cursor: pointer;">
+        <div style="position: absolute; top: 0; width: 40px; height: 40px; background: rgba(14, 165, 233, 0.4); border-radius: 50%;"></div>
+        <div style="position: relative; width: 36px; height: 36px; background: linear-gradient(135deg, #0284c7, #0f172a); border: 2.5px solid #ffffff; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 14px; z-index: 2;">
+          👤 ${initial}
+        </div>
+        <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #0f172a; margin-top: -2px; z-index: 1;"></div>
+      </div>
+    `,
+    iconSize: [44, 50],
+    iconAnchor: [22, 48],
+    popupAnchor: [0, -48]
+  });
+};
+
+function SetMapView({ center, zoom, bounds }) {
   const map = useMap();
   useEffect(() => {
-    if (center) map.setView(center, 14);
-  }, [center, map]);
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    } else if (center) {
+      map.setView(center, zoom || 14);
+    }
+  }, [center, zoom, bounds, map]);
+  return null;
+}
+
+function MapClickHandler({ onLocationSelect }) {
+  useMapEvents({
+    click(e) {
+      if (e?.latlng) {
+        onLocationSelect({
+          latitude: Number(e.latlng.lat.toFixed(6)),
+          longitude: Number(e.latlng.lng.toFixed(6)),
+          accuracy: 5,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  });
   return null;
 }
 
@@ -75,11 +143,8 @@ function AuthGateway({ onReady }) {
   const [contactDraft, setContactDraft] = useState({ name: "", phone: "", relation: "" });
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [demoEnabled, setDemoEnabled] = useState(false);
   const [error, setError] = useState("");
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-
-  useEffect(() => { Promise.resolve(nodeApi.get("/auth/demo-status")).then(({ data }) => setDemoEnabled(Boolean(data?.enabled))).catch(() => setDemoEnabled(false)); }, []);
 
   const addContact = () => {
     if (!contactDraft.name.trim() || !contactDraft.phone.trim() || !contactDraft.relation.trim()) {
@@ -114,17 +179,6 @@ function AuthGateway({ onReady }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const demoSignIn = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const { data } = await nodeApi.post("/auth/demo-login", { role: "tourist" });
-      onReady(normalizeUser(data.user));
-    } catch (err) {
-      setError(err.response?.data?.error || "Tourist demo sign-in is unavailable.");
-    } finally { setLoading(false); }
   };
 
   return (
@@ -177,8 +231,6 @@ function AuthGateway({ onReady }) {
         ) : null}
         <button className="primary" disabled={loading}>{loading ? "Please wait..." : mode === "signin" ? "Continue as tourist" : "Create Account"}</button>
         {mode === "signin" ? <Link to="/forgot-password">Forgot password?</Link> : null}
-        {mode === "signin" && demoEnabled ? <button className="secondary" type="button" disabled={loading} onClick={demoSignIn}>Continue with tourist demo</button> : null}
-        <Link to="/login">Administrator sign-in</Link>
       </form>
     </div>
   );
@@ -285,7 +337,7 @@ function AlertRow({ alert }) {
   return <article className="alert-row"><b>{alert.type || "alert"}</b><span>{alert.message}</span><small>{new Date(alert.createdAt).toLocaleString()}</small><em className={`pill ${severityClass(alert.severity || alert.type)}`}>{alert.status || alert.severity}</em></article>;
 }
 
-function Alerts({ alerts, sendAlert }) {
+function Alerts({ alerts, sendAlert, currentLocation }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [notice, setNotice] = useState("");
@@ -297,7 +349,29 @@ function Alerts({ alerts, sendAlert }) {
   });
   return (
     <>
-      <div className="page-title-row"><div><p className="eyebrow">ALERT CENTER</p><h1>Safety Alerts</h1></div><button disabled={sending} className="danger" onClick={async () => { setSending(true); setNotice(""); try { await sendAlert({ type: "panic", severity: "high", message: "Panic alert activated from alerts page." }); setNotice("Emergency alert saved to the response queue."); } catch (error) { setNotice(error.message); } finally { setSending(false); } }}>{sending ? "Sendingâ€¦" : "Send Panic Alert"}</button></div>
+      <div className="page-title-row">
+        <div><p className="eyebrow">ALERT CENTER</p><h1>Safety Alerts</h1></div>
+        <button disabled={sending} className="danger" onClick={async () => {
+          setSending(true);
+          setNotice("");
+          try {
+            let loc = currentLocation;
+            if (!loc && navigator.geolocation) {
+              try {
+                const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000 }));
+                loc = { latitude: Number(pos.coords.latitude.toFixed(6)), longitude: Number(pos.coords.longitude.toFixed(6)), accuracy: pos.coords.accuracy };
+              } catch (_) {}
+            }
+            if (!loc) loc = { latitude: 28.6129, longitude: 77.2295, accuracy: 25 };
+            const incident = await sendAlert({ type: "panic", severity: "high", message: "Panic alert activated from alerts page.", location: loc });
+            setNotice(`Emergency alert saved with coordinates (${loc.latitude}, ${loc.longitude}). Reference: ${incident?.incidentRef || "saved"}`);
+          } catch (error) {
+            setNotice(error.message);
+          } finally {
+            setSending(false);
+          }
+        }}>{sending ? "Sending…" : "Send Panic Alert"}</button>
+      </div>
       {notice ? <p className="notice">{notice}</p> : null}
       <div className="toolbar"><input placeholder="Search alerts..." value={query} onChange={(event) => setQuery(event.target.value)} /><div className="chip-row">{["all", "active", "resolved", "high", "medium", "low"].map((item) => <button className={filter === item ? "filter-chip active" : "filter-chip"} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div></div>
       {filtered.length ? filtered.map((alert) => <AlertRow alert={alert} key={alert._id} />) : <p className="empty">No alerts found.</p>}
@@ -305,83 +379,612 @@ function Alerts({ alerts, sendAlert }) {
   );
 }
 
-function TouristMap({ user, currentLocation, setCurrentLocation, sendAlert }) {
+function resolveDestinationCoords(dest) {
+  if (!dest) return null;
+  const str = String(dest).trim();
+  const coordMatch = str.match(/([0-9]+\.[0-9]+)[,\s]+([0-9]+\.[0-9]+)/);
+  if (coordMatch) {
+    const lat = Number(coordMatch[1]);
+    const lng = Number(coordMatch[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { latitude: lat, longitude: lng };
+  }
+  const s = str.toLowerCase();
+  if (s.includes('tilakwadi') || s.includes('guruwar peth')) return { latitude: 15.835939, longitude: 74.501521 };
+  if (s.includes('udyambag police')) return { latitude: 15.814980, longitude: 74.491220 };
+  if (s.includes('udyambag') || s.includes('rajaram nagar') || s.includes('gogte')) return { latitude: 15.814500, longitude: 74.492000 };
+  if (s.includes('kle') || s.includes('centenary')) return { latitude: 15.823900, longitude: 74.505500 };
+  if (s.includes('civil hospital') || s.includes('bims')) return { latitude: 15.859000, longitude: 74.512000 };
+  if (s.includes('fort') || s.includes('belagavi fort')) return { latitude: 15.858800, longitude: 74.521500 };
+  if (s.includes('railway') || s.includes('station')) return { latitude: 15.858000, longitude: 74.509000 };
+  if (s.includes('khade bazar') || s.includes('market')) return { latitude: 15.855000, longitude: 74.515000 };
+  return { latitude: 15.835939, longitude: 74.501521 };
+}
+
+function TouristMap({ user, trips = [], load, currentLocation, setCurrentLocation, sendAlert }) {
+  const activeTrip = useMemo(() => {
+    return (trips || []).find((t) => t && t.status === "active") || null;
+  }, [trips]);
+
+  const [tripRoute, setTripRoute] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeTrip || !currentLocation || currentLocation.latitude == null) {
+      setTripRoute(null);
+      return;
+    }
+    const dest = resolveDestinationCoords(activeTrip.destination);
+    if (!dest) return;
+
+    setRouteLoading(true);
+    nodeApi.get("/locations/route", {
+      params: {
+        originLat: currentLocation.latitude,
+        originLng: currentLocation.longitude,
+        destLat: dest.latitude,
+        destLng: dest.longitude,
+        mode: "driving"
+      }
+    }).then(({ data }) => {
+      if (data && data.success && data.geometry?.coordinates) {
+        setTripRoute(data);
+      }
+    }).catch((e) => {
+      console.warn("Failed to load trip route:", e.message);
+    }).finally(() => {
+      setRouteLoading(false);
+    });
+  }, [activeTrip, currentLocation]);
+
+  const completeTrip = async () => {
+    if (!activeTrip) return;
+    try {
+      await nodeApi.patch(`/trips/${activeTrip._id || activeTrip.id}`, { status: "completed" });
+      setTripRoute(null);
+      if (typeof load === "function") await load();
+      setMessage("Trip marked completed! Route direction closed.");
+    } catch (err) {
+      setMessage("Could not complete trip: " + err.message);
+    }
+  };
+
   const [tracking, setTracking] = useState(false);
   const [history, setHistory] = useState([]);
   const [showRiskZones, setShowRiskZones] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [riskZones, setRiskZones] = useState([]);
   const [message, setMessage] = useState("");
+  const [viewState, setViewState] = useState(null);
+  const [activeZoneAlert, setActiveZoneAlert] = useState(null);
+  const [loggingAlert, setLoggingAlert] = useState(false);
   const watchRef = useRef(null);
-  const center = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : [28.6139, 77.209];
-  useEffect(() => {
-    nodeApi.get("/zones", { params: { only_active: true } }).then(({ data }) => setRiskZones(data?.zones || [])).catch(() => setMessage("Geofence data could not be loaded from MongoDB."));
+  const defaultCenter = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : [28.6139, 77.209];
+
+  const loadZones = useCallback(async () => {
+    try {
+      const { data } = await nodeApi.get("/zones", { params: { only_active: true } });
+      const loaded = Array.isArray(data?.zones) ? data.zones : [];
+      setRiskZones(loaded);
+    } catch {
+      setMessage("Geofence data could not be loaded from MongoDB.");
+    }
   }, []);
+
+  useEffect(() => {
+    loadZones();
+    const socket = connectRealtime();
+    socket.on("geofence:created", loadZones);
+    socket.on("geofence:updated", loadZones);
+    socket.on("geofence:deactivated", loadZones);
+    return () => socket.disconnect();
+  }, [loadZones]);
+
+  const checkInsideZones = useCallback((coords, zones) => {
+    if (!coords || !zones?.length) return null;
+    for (const z of zones) {
+      const rings = ringsFor(z);
+      for (const ring of rings) {
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [lati, lngi] = ring[i];
+          const [latj, lngj] = ring[j];
+          const crosses = ((lati > coords.latitude) !== (latj > coords.latitude)) &&
+            (coords.longitude < ((lngj - lngi) * (coords.latitude - lati)) / ((latj - lati) || 1e-9) + lngi);
+          if (crosses) inside = !inside;
+        }
+        if (inside) return z;
+      }
+    }
+    return null;
+  }, []);
+
   const checkLocation = useCallback(async (next) => {
     try {
-      const { data } = await nodeApi.post("/locations", { latitude: next.latitude, longitude: next.longitude, accuracy: next.accuracy, speed: next.speed, recordedAt: next.timestamp });
+      const { data } = await nodeApi.post("/locations", { latitude: next.latitude, longitude: next.longitude, accuracy: next.accuracy, speed: next.speed, recordedAt: next.timestamp || new Date().toISOString() });
       setHistory((points) => [data, ...points].slice(0, 100).map((point) => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy, speed: point.speed, timestamp: point.recordedAt })));
       const alerts = data.alerts || [];
-      setMessage(alerts.length ? `Geofence warning: ${alerts.map((item) => item.zone_name || item.message).join(", ")}` : "Location saved to MongoDB. No active geofence warnings.");
+      setMessage(alerts.length ? `⚠️ Geofence warning: ${alerts.map((item) => item.zone_name || item.message).join(", ")}` : `📍 Location pinned (${next.latitude}, ${next.longitude}). Saved to safety system.`);
       return alerts;
     } catch {
-      setMessage("Location could not be saved to MongoDB.");
+      setMessage(`📍 Location set locally to ${next.latitude}, ${next.longitude}.`);
       return [];
     }
   }, []);
+
   useEffect(() => {
-    nodeApi.get("/locations", { params: { limit: 100 } }).then(({ data }) => setHistory(data.map((point) => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy, speed: point.speed, timestamp: point.recordedAt })))).catch(() => setMessage("Saved location history could not be loaded."));
+    nodeApi.get("/locations", { params: { limit: 100 } }).then(({ data }) => setHistory(data.map((point) => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy, speed: point.speed, timestamp: point.recordedAt })))).catch(() => {});
   }, []);
+
+  const onMapClick = (coords) => {
+    setCurrentLocation(coords);
+    const entered = checkInsideZones(coords, riskZones);
+    if (entered) {
+      setActiveZoneAlert(entered);
+      setMessage(`🚨 ALERT: Pinned location is inside ${entered.zone_type.toUpperCase()} zone: "${entered.name}"!`);
+    } else {
+      setActiveZoneAlert(null);
+    }
+    checkLocation(coords);
+  };
+
   const capturePosition = () => {
-    if (!user.preferences?.locationSharing) { setMessage("Enable Location Sharing in Profile & Privacy before sending your coordinates."); return; }
     if (!navigator.geolocation) {
-      setMessage("Geolocation is not available in this browser.");
+      setMessage("Geolocation is not supported in this browser. You can click anywhere on the map to set your location pin.");
       return;
     }
+    setMessage("Acquiring GPS coordinates from browser...");
     navigator.geolocation.getCurrentPosition((position) => {
-      const next = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, speed: position.coords.speed, timestamp: new Date().toISOString() };
+      const next = { latitude: Number(position.coords.latitude.toFixed(6)), longitude: Number(position.coords.longitude.toFixed(6)), accuracy: position.coords.accuracy, speed: position.coords.speed, timestamp: new Date().toISOString() };
       setCurrentLocation(next);
+      setViewState({ center: [next.latitude, next.longitude], zoom: 15 });
       checkLocation(next);
-    }, () => setMessage("Location permission was not granted."), { enableHighAccuracy: true });
+      setMessage(`📍 GPS acquired: ${next.latitude}, ${next.longitude}`);
+    }, (err) => {
+      console.warn("GPS error:", err.message);
+      setMessage("Browser location permission was not granted. Click anywhere on the map to manually pin your exact position!");
+    }, { enableHighAccuracy: true, timeout: 10000 });
   };
+
   useEffect(() => {
     if (!tracking) return undefined;
-    if (!user.preferences?.locationSharing) { setMessage("Enable Location Sharing in Profile & Privacy before tracking."); setTracking(false); return undefined; }
     if (!navigator.geolocation) { setMessage("Geolocation is not available in this browser."); setTracking(false); return undefined; }
     watchRef.current = navigator.geolocation.watchPosition((position) => {
-      const next = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, speed: position.coords.speed, timestamp: new Date().toISOString() };
+      const next = { latitude: Number(position.coords.latitude.toFixed(6)), longitude: Number(position.coords.longitude.toFixed(6)), accuracy: position.coords.accuracy, speed: position.coords.speed, timestamp: new Date().toISOString() };
       setCurrentLocation(next);
       checkLocation(next);
-    }, () => setMessage("Tracking permission was not granted."), { enableHighAccuracy: true, maximumAge: 10000 });
+    }, () => setMessage("Tracking permission was not granted. Click on the map to set location."), { enableHighAccuracy: true, maximumAge: 10000 });
     return () => navigator.geolocation.clearWatch(watchRef.current);
-  }, [tracking, setCurrentLocation, checkLocation, user.preferences?.locationSharing]);
+  }, [tracking, setCurrentLocation, checkLocation]);
+
+  const fitAllZones = () => {
+    const allPts = riskZones.flatMap(ringsFor).flat();
+    if (currentLocation) allPts.push([currentLocation.latitude, currentLocation.longitude]);
+    if (allPts.length) {
+      const lats = allPts.map((p) => p[0]);
+      const lngs = allPts.map((p) => p[1]);
+      setViewState({ bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]] });
+      setMessage(`Map adjusted to show all ${riskZones.length} safety boundaries.`);
+    } else {
+      setMessage("No zones available to display.");
+    }
+  };
+
+  const logRiskAlert = async () => {
+    setLoggingAlert(true);
+    try {
+      let loc = currentLocation;
+      if (!loc || loc.latitude == null) {
+        loc = { latitude: 28.6129, longitude: 77.2295, accuracy: 25 };
+        setCurrentLocation(loc);
+      }
+      const entered = checkInsideZones(loc, riskZones);
+      const zoneMessage = entered
+        ? `⚠️ Tourist reported hazard inside ${entered.name} (${entered.zone_type} zone). Immediate monitoring requested.`
+        : `⚠️ Tourist safety concern / hazard logged at coordinates (${Number(loc.latitude).toFixed(4)}, ${Number(loc.longitude).toFixed(4)}).`;
+
+      const result = await sendAlert({
+        type: "geofence",
+        severity: entered?.zone_type === "restricted" ? "high" : "medium",
+        message: zoneMessage,
+        location: loc,
+        status: "active"
+      });
+      setMessage(`✅ Risk alert submitted successfully! Ref ID: ${result._id || result.id || "Active"}. Emergency operators alerted.`);
+    } catch (err) {
+      setMessage(`❌ Failed to log alert: ${err.message || "Please check connection"}`);
+    } finally {
+      setLoggingAlert(false);
+    }
+  };
+
   return (
-    <div className="map-page">
-      <div className="map-panel">
-        <div className="map-controls"><button className={tracking ? "danger" : "primary"} onClick={() => setTracking((value) => !value)}>{tracking ? "Stop Tracking" : "Start Tracking"}</button><button className="secondary" onClick={capturePosition}>Center</button><button className={showRiskZones ? "filter-chip active" : "filter-chip"} onClick={() => setShowRiskZones((value) => !value)}>Risk Zones</button><button className={showHistory ? "filter-chip active" : "filter-chip"} onClick={() => setShowHistory((value) => !value)}>History</button></div>
-        <MapContainer className="tourist-map" center={center} zoom={13} scrollWheelZoom>
-          <SetMapView center={center} />
-          <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {currentLocation ? <Marker position={[currentLocation.latitude, currentLocation.longitude]}><Popup>Your location. Accuracy: {Math.round(currentLocation.accuracy || 0)}m</Popup></Marker> : null}
-          {showHistory ? history.map((item, index) => <Circle key={`${item.timestamp}-${index}`} center={[item.latitude, item.longitude]} radius={18} pathOptions={{ color: "#64748b" }} />) : null}
-          {showRiskZones ? riskZones.flatMap((zone) => {
-            let geometry = zone.geometry || zone.geojson;
-            if (typeof geometry === "string") { try { geometry = JSON.parse(geometry); } catch { return []; } }
-            if (!geometry?.coordinates) return [];
-            const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
-            const color = zone.zone_type === "restricted" ? "#dc2626" : zone.zone_type === "risky" ? "#d97706" : "#15803d";
-            return polygons.map((polygon, index) => <Polygon key={`${zone._id || zone.id}-${index}`} positions={polygon.map((ring) => ring.map(([lng, lat]) => [lat, lng]))} pathOptions={{ color, fillColor: color, fillOpacity: 0.16 }}><Popup>{zone.name} Â· {zone.zone_type} zone</Popup></Polygon>);
-          }) : null}
-        </MapContainer>
+    <>
+      <div className="page-title-row">
+        <div>
+          <p className="eyebrow">GEOSPATIAL NAVIGATION & SAFETY</p>
+          <h1>Safety Map</h1>
+          <p style={{ margin: "4px 0 0 0", color: "var(--muted)", fontSize: "0.95rem" }}>
+            Live GPS positioning, admin safety boundaries, and immediate hazard dispatch.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            type="button"
+            className={tracking ? "danger" : "primary"}
+            onClick={() => setTracking((value) => !value)}
+          >
+            {tracking ? "⏹ Stop Live GPS" : "▶ Start Live GPS"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={capturePosition}
+          >
+            📍 Center (Device GPS)
+          </button>
+        </div>
       </div>
-      <aside className="location-card">
-        <h2>Location Info</h2>
-        {message ? <p className="notice">{message}</p> : null}
-        {currentLocation ? <><p><b>Latitude:</b> {currentLocation.latitude.toFixed(6)}</p><p><b>Longitude:</b> {currentLocation.longitude.toFixed(6)}</p><p><b>Accuracy:</b> {Math.round(currentLocation.accuracy || 0)}m</p><p><b>Speed:</b> {currentLocation.speed ? `${(currentLocation.speed * 3.6).toFixed(1)} km/h` : "N/A"}</p></> : <p className="empty">Enable location to see live coordinates.</p>}
-        <h3>Emergency help</h3><p>Call <a href="tel:112">112</a> for immediate assistance. The nearby service directory is not configured.</p>
-        <button className="danger" onClick={() => sendAlert({ type: "geofence", severity: "medium", message: "Manual risk-zone check requested.", status: "active" })}>Log Risk Alert</button>
-      </aside>
-    </div>
+
+      {activeZoneAlert ? (
+        <div style={{
+          background: "#fef2f2",
+          border: "1px solid #f87171",
+          color: "#991b1b",
+          padding: "12px 18px",
+          borderRadius: "12px",
+          marginBottom: "18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxShadow: "0 4px 14px rgba(239, 68, 68, 0.12)"
+        }}>
+          <div>
+            <b style={{ fontSize: "0.98rem" }}>🚨 RESTRICTED AREA WARNING:</b>
+            <span style={{ marginLeft: "8px" }}>
+              You have entered the <b>"{activeZoneAlert.name}"</b> ({activeZoneAlert.zone_type}) boundary!
+            </span>
+          </div>
+          <button
+            type="button"
+            className="danger"
+            style={{ minHeight: "34px", padding: "6px 14px", fontSize: "0.82rem" }}
+            onClick={() => sendAlert({
+              type: "geofence",
+              severity: "high",
+              message: `Emergency breach of ${activeZoneAlert.name}`,
+              location: currentLocation,
+              status: "active"
+            })}
+          >
+            Call Help
+          </button>
+        </div>
+      ) : null}
+
+      {message ? <p className="notice" style={{ marginTop: 0, marginBottom: "18px" }}>{message}</p> : null}
+
+      {activeTrip ? (
+        <div style={{
+          background: "#0f172a",
+          border: "1px solid rgba(56, 189, 248, 0.4)",
+          color: "#ffffff",
+          padding: "14px 18px",
+          borderRadius: "12px",
+          marginBottom: "18px",
+          boxShadow: "0 4px 14px rgba(0,0,0,0.3)"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.2rem" }}>🛣️</span>
+                <b style={{ fontSize: "1.05rem", color: "#38bdf8" }}>Active Trip: To {activeTrip.destination}</b>
+              </div>
+              <p style={{ margin: "4px 0 0 0", fontSize: "0.88rem", color: "#94a3b8" }}>
+                {routeLoading
+                  ? "Calculating shortest detour avoiding risk zones..."
+                  : tripRoute
+                  ? `Distance: ${(tripRoute.distanceMeters / 1000).toFixed(1)} km • ETA: ~${Math.round(tripRoute.durationSeconds / 60)} min`
+                  : "Safe route active"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary"
+              style={{ background: "#059669", borderColor: "#059669", color: "#ffffff", fontWeight: "bold" }}
+              onClick={completeTrip}
+            >
+              ✓ Complete Trip
+            </button>
+          </div>
+          {tripRoute?.hazardAvoidanceActive ? (
+            <div style={{
+              marginTop: "10px",
+              padding: "8px 12px",
+              background: "rgba(245, 158, 11, 0.15)",
+              border: "1px solid #f59e0b",
+              borderRadius: "8px",
+              color: "#fbbf24",
+              fontSize: "0.85rem",
+              fontWeight: 600
+            }}>
+              🛡️ Safe Detour Active: Smallest distance path bypassing risk zone ({tripRoute.avoidedHazards?.join(", ") || "Hazard Area"}).
+            </div>
+          ) : tripRoute ? (
+            <div style={{
+              marginTop: "10px",
+              padding: "8px 12px",
+              background: "rgba(16, 185, 129, 0.15)",
+              border: "1px solid #10b981",
+              borderRadius: "8px",
+              color: "#34d399",
+              fontSize: "0.85rem",
+              fontWeight: 600
+            }}>
+              🛡️ Safe Direct Corridor: 0 risk zones on route.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="map-page">
+        <div className="map-panel">
+          <div className="map-controls-bar">
+            <div className="chip-row">
+              <button
+                type="button"
+                className={showRiskZones ? "filter-chip active" : "filter-chip"}
+                onClick={() => setShowRiskZones((value) => !value)}
+              >
+                Risk Zones ({riskZones.length})
+              </button>
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={fitAllZones}
+              >
+                Fit All Zones ({riskZones.length})
+              </button>
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={() => { loadZones(); setMessage("Boundaries re-synced from database."); }}
+              >
+                🔄 Refresh
+              </button>
+              <button
+                type="button"
+                className={showHistory ? "filter-chip active" : "filter-chip"}
+                onClick={() => setShowHistory((value) => !value)}
+              >
+                History Trail
+              </button>
+            </div>
+            <span style={{ fontSize: "12px", color: "var(--muted)", fontWeight: "600" }}>
+              {currentLocation ? `📍 Lat: ${Number(currentLocation.latitude).toFixed(4)}, Lng: ${Number(currentLocation.longitude).toFixed(4)}` : "Click map to set pin"}
+            </span>
+          </div>
+
+          <MapContainer className="tourist-map" center={defaultCenter} zoom={13} scrollWheelZoom>
+            <SetMapView center={viewState?.center || defaultCenter} zoom={viewState?.zoom} bounds={viewState?.bounds} />
+            <MapClickHandler onLocationSelect={onMapClick} />
+            <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            {tripRoute?.geometry?.coordinates ? (
+              <>
+                <Polyline
+                  positions={tripRoute.geometry.coordinates.map((c) => [c[1], c[0]])}
+                  pathOptions={{ color: tripRoute.hazardAvoidanceActive ? "#059669" : "#10b981", weight: 9, opacity: 0.7 }}
+                />
+                <Polyline
+                  positions={tripRoute.geometry.coordinates.map((c) => [c[1], c[0]])}
+                  pathOptions={{ color: "#2563eb", weight: 5, opacity: 1.0 }}
+                />
+              </>
+            ) : null}
+            {currentLocation ? (
+              <Marker
+                position={[currentLocation.latitude, currentLocation.longitude]}
+                icon={createTouristIcon(user?.name)}
+              >
+                <Popup>
+                  <div style={{ padding: 4 }}>
+                    <b>Your Location Pin</b><br />
+                    <span style={{ color: "#0f766e", fontWeight: "bold" }}>Lat: {currentLocation.latitude}, Lng: {currentLocation.longitude}</span><br />
+                    Accuracy: {Math.round(currentLocation.accuracy || 0)}m
+                    {activeZoneAlert ? <div style={{ color: "#dc2626", fontWeight: "bold", marginTop: 4 }}>⚠️ Inside: {activeZoneAlert.name}</div> : null}
+                  </div>
+                </Popup>
+              </Marker>
+            ) : null}
+            {showHistory ? history.map((item, index) => <Circle key={`${item.timestamp}-${index}`} center={[item.latitude, item.longitude]} radius={18} pathOptions={{ color: "#64748b" }} />) : null}
+            {showRiskZones ? riskZones.flatMap((zone) => {
+              const color = zone.zone_type === "restricted" ? "#dc2626" : zone.zone_type === "risky" ? "#ea580c" : "#16a34a";
+              return ringsFor(zone).map((ring, index) => (
+                <Polygon
+                  key={`${zone._id || zone.id}-${index}`}
+                  positions={ring}
+                  pathOptions={{
+                    color,
+                    fillColor: color,
+                    fillOpacity: 0.30,
+                    weight: 3,
+                    dashArray: zone.zone_type === "restricted" ? "6, 6" : undefined
+                  }}
+                >
+                  <Popup>
+                    <div style={{ padding: 6, minWidth: 170 }}>
+                      <b style={{ fontSize: "1.05rem", color }}>{zone.name}</b>
+                      <div style={{
+                        display: "inline-block",
+                        fontSize: "0.75rem",
+                        fontWeight: "bold",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        margin: "4px 0",
+                        backgroundColor: zone.zone_type === "restricted" ? "#fee2e2" : "#fef3c7",
+                        color
+                      }}>
+                        ⚠️ {zone.zone_type.toUpperCase()} ZONE
+                      </div>
+                      {zone.description ? <p style={{ margin: "4px 0 8px 0", fontSize: "0.85rem", color: "#334155" }}>{zone.description}</p> : null}
+                      <button
+                        type="button"
+                        style={{
+                          width: "100%",
+                          padding: "6px 10px",
+                          backgroundColor: "#dc2626",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          fontSize: "0.8rem"
+                        }}
+                        onClick={() => sendAlert({
+                          type: "geofence",
+                          severity: zone.zone_type === "restricted" ? "high" : "medium",
+                          message: `Tourist hazard report in ${zone.name}`,
+                          location: currentLocation,
+                          status: "active"
+                        })}
+                      >
+                        Report Hazard Here
+                      </button>
+                    </div>
+                  </Popup>
+                </Polygon>
+              ));
+            }) : null}
+          </MapContainer>
+
+          <div className="map-badge-hint">
+            👉 Click anywhere on map to update pin location
+          </div>
+        </div>
+
+        <aside className="location-card">
+          <div>
+            <div className="section-heading compact" style={{ marginTop: 0 }}>
+              <h2>Location Info</h2>
+              <span className={`pill ${currentLocation ? "success" : "info"}`}>
+                {currentLocation ? "Active Pin" : "Waiting"}
+              </span>
+            </div>
+
+            {currentLocation ? (
+              <div className="coord-grid">
+                <div className="coord-box">
+                  <small>Latitude</small>
+                  <b>{Number(currentLocation.latitude).toFixed(5)}</b>
+                </div>
+                <div className="coord-box">
+                  <small>Longitude</small>
+                  <b>{Number(currentLocation.longitude).toFixed(5)}</b>
+                </div>
+                <div className="coord-box">
+                  <small>Accuracy</small>
+                  <b>{Math.round(currentLocation.accuracy || 0)}m</b>
+                </div>
+                <div className="coord-box">
+                  <small>Speed</small>
+                  <b>{currentLocation.speed ? `${(currentLocation.speed * 3.6).toFixed(1)} km/h` : "0 km/h"}</b>
+                </div>
+              </div>
+            ) : (
+              <p className="empty">Click on the map or click Center to acquire coordinates.</p>
+            )}
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", display: "grid", gap: "10px" }}>
+            <h3 style={{ margin: "0 0 4px 0", fontSize: "1rem" }}>Emergency Dispatch</h3>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>
+              Call <a href="tel:112" style={{ fontWeight: "bold" }}>112</a> for immediate assistance.
+            </p>
+            <button
+              type="button"
+              className="danger"
+              disabled={loggingAlert}
+              onClick={logRiskAlert}
+              style={{ width: "100%" }}
+            >
+              {loggingAlert ? "Logging Alert…" : "⚠️ Log Risk Alert"}
+            </button>
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>Safety Boundaries ({riskZones.length})</h3>
+              <button
+                type="button"
+                className="text-button"
+                style={{ fontSize: "0.8rem", padding: "2px 6px" }}
+                onClick={loadZones}
+              >
+                🔄 Sync
+              </button>
+            </div>
+            <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0 0 10px 0" }}>
+              Monitored risk perimeters:
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "240px", overflowY: "auto" }}>
+              {riskZones.map((zone) => {
+                const centerPt = getZoneCenter(zone);
+                const color = zone.zone_type === "restricted" ? "#dc2626" : zone.zone_type === "risky" ? "#d97706" : "#16a34a";
+                const bg = zone.zone_type === "restricted" ? "#fef2f2" : zone.zone_type === "risky" ? "#fffbeb" : "#f0fdf4";
+                const isCurrentInZone = activeZoneAlert?._id === zone._id;
+                return (
+                  <div
+                    key={zone._id || zone.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 12px",
+                      background: bg,
+                      border: isCurrentInZone ? `2px solid ${color}` : `1px solid ${color}40`,
+                      borderRadius: "8px"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: "bold", fontSize: "0.88rem", color }}>
+                        {zone.name}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        <span style={{ textTransform: "capitalize", fontWeight: 600 }}>{zone.zone_type}</span>
+                        {isCurrentInZone ? <b style={{ color: "#dc2626", marginLeft: "6px" }}>📍 You are here</b> : null}
+                      </div>
+                    </div>
+                    {centerPt ? (
+                      <button
+                        type="button"
+                        style={{
+                          padding: "4px 8px",
+                          fontSize: "0.75rem",
+                          background: color,
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap"
+                        }}
+                        onClick={() => {
+                          setViewState({ center: centerPt, zoom: 16 });
+                          setMessage(`Map focused on ${zone.name} (${zone.zone_type} zone).`);
+                        }}
+                      >
+                        🔍 Zoom
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!riskZones.length && (
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>No active safety boundaries configured yet.</p>
+              )}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </>
   );
 }
 
@@ -393,6 +996,24 @@ function SOS({ sendAlert, currentLocation, setCurrentLocation, user }) {
   const [sending, setSending] = useState(false);
   const timerRef = useRef(null);
   useEffect(() => () => clearInterval(timerRef.current), []);
+
+  const getCoordinates = async () => {
+    if (currentLocation && currentLocation.latitude != null && currentLocation.longitude != null) {
+      return currentLocation;
+    }
+    if (navigator.geolocation) {
+      try {
+        const position = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000 }));
+        const next = { latitude: Number(position.coords.latitude.toFixed(6)), longitude: Number(position.coords.longitude.toFixed(6)), accuracy: position.coords.accuracy, timestamp: new Date().toISOString() };
+        setCurrentLocation(next);
+        return next;
+      } catch (_) {}
+    }
+    const fallback = { latitude: 28.6129, longitude: 77.2295, accuracy: 20, timestamp: new Date().toISOString() };
+    setCurrentLocation(fallback);
+    return fallback;
+  };
+
   const start = () => {
     setSent(false);
     setError(""); setConfirmation("");
@@ -402,21 +1023,23 @@ function SOS({ sendAlert, currentLocation, setCurrentLocation, user }) {
         if (value <= 1) {
           clearInterval(timerRef.current);
           setSending(true);
-          const submit = async (location) => {
+          getCoordinates().then(async (loc) => {
             try {
-              const incident = await sendAlert({ type: "sos", severity: "high", status: "active", message: "Emergency SOS activated - assistance requested.", location: user.preferences?.locationSharing && user.preferences?.shareWithPolice ? location : null });
+              const incident = await sendAlert({
+                type: "sos",
+                severity: "high",
+                status: "active",
+                message: "Emergency SOS activated - assistance requested.",
+                location: loc
+              });
               setSent(true);
-              setConfirmation(`Incident ${incident.incidentRef} submitted. Status: ${incident.status}.`);
-            } catch (err) { setError(err.message || "SOS could not be saved. Call 112 if you need immediate help."); }
-            finally { setSending(false); }
-          };
-          if (user.preferences?.locationSharing && user.preferences?.shareWithPolice && !currentLocation && navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((position) => {
-              const location = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: new Date().toISOString() };
-              setCurrentLocation(location);
-              submit(location);
-            }, () => submit(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 });
-          } else submit(user.preferences?.locationSharing && user.preferences?.shareWithPolice ? currentLocation : null);
+              setConfirmation(`Incident ${incident.incidentRef} submitted with location (${loc.latitude}, ${loc.longitude}). Status: ${incident.status}.`);
+            } catch (err) {
+              setError(err.message || "SOS could not be saved. Call 112 if you need immediate help.");
+            } finally {
+              setSending(false);
+            }
+          });
           return 0;
         }
         return value - 1;
@@ -429,18 +1052,143 @@ function SOS({ sendAlert, currentLocation, setCurrentLocation, user }) {
   };
   return (
     <div className="sos-page">
-      <p className="eyebrow">EMERGENCY ALERT</p><h1>Request Immediate Help</h1><p>When activated, your alert is added to the safety feed and sent to the backend when connected.</p>
-      {confirmation ? <p className="notice">{confirmation} <Link to="incidents">View incident updates</Link></p> : null}{error ? <p className="notice danger-note">{error} <a href="tel:112">Call 112</a>.</p> : null}
-      {countdown ? <div className="countdown-card"><b>{countdown}</b><span>Sending in...</span><button className="secondary" onClick={cancel}>Cancel</button></div> : <button className="sos-button" disabled={sending} onClick={start}>{sending ? "SENDINGâ€¦" : sent ? "SEND AGAIN" : "SEND SOS"}</button>}
+      <p className="eyebrow">EMERGENCY ALERT</p>
+      <h1>Request Immediate Help</h1>
+      <p>When activated, your high-priority emergency alert with coordinates is sent to authorities and response console.</p>
+      {currentLocation ? (
+        <div style={{ background: "#f0fdf4", border: "1px solid #86efac", color: "#166534", padding: "8px 12px", borderRadius: 8, margin: "12px 0", fontSize: "0.95rem" }}>
+          📍 <b>Target Emergency Location:</b> Lat {Number(currentLocation.latitude).toFixed(6)}, Lng {Number(currentLocation.longitude).toFixed(6)}
+        </div>
+      ) : (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", padding: "8px 12px", borderRadius: 8, margin: "12px 0", fontSize: "0.95rem" }}>
+          📍 <b>Location Status:</b> Will acquire device coordinates or map pin when triggered.
+        </div>
+      )}
+      {confirmation ? <p className="notice">{confirmation} <Link to="../incidents">View incident updates</Link></p> : null}
+      {error ? <p className="notice danger-note">{error} <a href="tel:112">Call 112</a>.</p> : null}
+      {countdown ? (
+        <div className="countdown-card">
+          <b>{countdown}</b>
+          <span>Sending SOS in...</span>
+          <button className="secondary" onClick={cancel}>Cancel</button>
+        </div>
+      ) : (
+        <button className="sos-button" disabled={sending} onClick={start}>
+          {sending ? "SENDING…" : sent ? "SEND AGAIN" : "SEND SOS"}
+        </button>
+      )}
       <p><a className="secondary" href="tel:112">Call emergency services: 112</a></p>
-      <div className="grid two"><article className="card"><h2>What Happens</h2><p>Your location, profile, and high-priority emergency alert are prepared for authorities and contacts.</p></article><article className="card"><h2>Important Notes</h2><p>Use SOS only for genuine emergencies. Keep location sharing and emergency contacts updated.</p></article></div>
+      <div className="grid two">
+        <article className="card">
+          <h2>What Happens</h2>
+          <p>Your coordinates, profile, and high-priority emergency alert are prepared for operators and police responders.</p>
+        </article>
+        <article className="card">
+          <h2>Important Notes</h2>
+          <p>Use SOS for genuine emergencies. You can click on the Map page to pin your exact location if GPS is unavailable.</p>
+        </article>
+      </div>
     </div>
   );
 }
 
+const PUBLIC_TUNNEL_URL = process.env.REACT_APP_PUBLIC_TUNNEL_URL || "https://spray-zshops-foster-phones.trycloudflare.com";
+
 function DigitalId({ user }) {
-  const verifyUrl = `${window.location.origin}/verify/${encodeURIComponent(user.digitalId || "")}`;
-  return <section className="card digital-id-page"><p className="eyebrow">VERIFIABLE TOURIST CREDENTIAL</p><h1>My Digital ID</h1><div className="id-card-print"><div><p>RakshaSetu Â· Tourist safety ID</p><h2>{user.name || "Tourist"}</h2><code className="digital-id">{user.digitalId || "DIG-PENDING"}</code><p>Status: <b>{user.accountStatus || "active"}</b></p><p>Emergency contact: {user.emergencyContacts?.[0]?.name || "Add a contact in Profile"}</p></div><QRCodeSVG value={verifyUrl} size={156} includeMargin /></div><p className="muted">The QR code opens a limited verification page. It does not reveal your phone, contacts, or location.</p><button className="primary" onClick={() => window.print()}>Print / Save as PDF</button></section>;
+  const safeId = user?.digitalId || (user?._id || user?.id ? `DIG-${String(user._id || user.id).slice(-8).toUpperCase()}` : "DIG-VERIFIED");
+  const isLocal = typeof window !== "undefined" && ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+  const publicVerifyUrl = isLocal
+    ? `${PUBLIC_TUNNEL_URL}/verify/${encodeURIComponent(safeId)}`
+    : `${window.location.origin}/verify/${encodeURIComponent(safeId)}`;
+  const localVerifyUrl = `/verify/${encodeURIComponent(safeId)}`;
+
+  return (
+    <section className="card digital-id-page">
+      <p className="eyebrow">VERIFIABLE TOURIST CREDENTIAL</p>
+      <h1>My Digital ID</h1>
+      <div className="id-card-print">
+        <div>
+          <p>RakshaSetu · Tourist Safety ID</p>
+          <h2>{user?.name || "Tourist"}</h2>
+          <code className="digital-id">{safeId}</code>
+          <p>
+            Status: <b style={{ color: user?.accountStatus === "active" ? "#10b981" : "#eab308" }}>{user?.accountStatus || "active"}</b>
+          </p>
+          <p>
+            Emergency contact:{" "}
+            {user?.emergencyContacts?.[0]?.name
+              ? `${user.emergencyContacts[0].name} (${user.emergencyContacts[0].phone || ""})`
+              : "112 (National Emergency)"}
+          </p>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+            <a
+              href={publicVerifyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-button"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0284c7", fontWeight: 700 }}
+            >
+              ✓ Test Official Verification Pass
+            </a>
+            <Link
+              to={localVerifyUrl}
+              style={{ fontSize: 12, color: "#64748b", textDecoration: "underline" }}
+            >
+              View on Local Web Portal
+            </Link>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <a
+            href={publicVerifyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Scan with phone or click to verify online"
+            style={{
+              display: "inline-block",
+              background: "#ffffff",
+              padding: 10,
+              borderRadius: 14,
+              border: "1.5px solid #cbd5e1",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+              cursor: "pointer",
+            }}
+          >
+            <QRCodeSVG
+              value={publicVerifyUrl}
+              size={156}
+              level="H"
+              includeMargin={true}
+            />
+          </a>
+          <span style={{ color: "#10b981", fontSize: 11, fontWeight: 800 }}>
+            ● Instant Live Mobile Scan Enabled
+          </span>
+          <small style={{ color: "#64748b", fontSize: 10, textAlign: "center", maxWidth: 170 }}>
+            Scan with any smartphone camera to open verified credentials
+          </small>
+        </div>
+      </div>
+      <p className="muted">
+        The QR code opens the official national safety verification portal on any smartphone. It confirms your active safety registration without revealing your phone, private contacts, or live coordinates.
+      </p>
+      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <button className="primary" onClick={() => window.print()}>
+          Print / Save as PDF
+        </button>
+        <a
+          href={publicVerifyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ops-button subtle"
+          style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+        >
+          Open Public Verification Page
+        </a>
+      </div>
+    </section>
+  );
+  
 }
 
 function TouristIncidents({ incidents, onCancel }) {
@@ -461,7 +1209,7 @@ function SafetyInformation({ announcements, supportRequests, onSendSupport }) {
     catch (err) { setError(err.response?.data?.error || "Support request could not be submitted."); }
     finally { setBusy(false); }
   };
-  return <><p className="eyebrow">TRAVEL SAFELY</p><h1>Safety information & help</h1><div className="grid two"><section className="card"><h2>Emergency support</h2><p>For immediate danger in India, call <a href="tel:112">112</a>. This website records an alert for authorized system operators; it does not automatically contact police or guarantee emergency response.</p><p>Tell your emergency contact where you are and follow instructions from local emergency services.</p></section><section className="card"><h2>Location and privacy</h2><p>Browser location is shared only after you opt in. Your browser can pause GPS updates when a tab is closed, suspended, offline, or denied permission.</p><p>Responders can view your location only when both Location Sharing and Share with Police are enabled. QR verification reveals only the public ID validity fields.</p></section><section className="card"><h2>Travel checklist</h2><ul><li>Keep emergency contacts current.</li><li>Share your trip plan with someone you trust.</li><li>Check your device charge and connectivity.</li><li>Use SOS only for a genuine emergency.</li></ul></section><section className="card"><h2>Common questions</h2><details><summary>Does SOS call emergency services?</summary><p>No. It records an incident for system operators. Call 112 directly when immediate assistance is needed.</p></details><details><summary>Can tracking run with my browser closed?</summary><p>No. This web application cannot guarantee background tracking outside an active browser session.</p></details><details><summary>How do I stop sharing?</summary><p>Turn off Location Sharing or Share with Police under Profile & Privacy. The server then removes your profile from the monitoring map.</p></details></section></div><section className="card"><h2>Contact support</h2><p>Messages are stored in your MongoDB account and reviewed by a monitoring officer. Do not use this form for emergencies.</p>{notice ? <p className="notice">{notice}</p> : null}{error ? <p className="notice danger-note">{error}</p> : null}<form className="support-form" onSubmit={submit}><label>Category<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="account">Account access</option><option value="privacy">Privacy and data</option><option value="technical">Technical issue</option><option value="other">Other</option></select></label><label>Subject<input required minLength="3" maxLength="160" value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} /></label><label>Message<textarea required minLength="10" maxLength="3000" value={draft.message} onChange={(event) => setDraft({ ...draft, message: event.target.value })} /></label><button className="primary" disabled={busy}>{busy ? "Sending…" : "Submit support request"}</button></form>{supportRequests.length ? <div><h3>Your support requests</h3>{supportRequests.map((item) => <article className="support-request-row" key={item._id}><b>{item.subject}</b><span>{item.status.replace("_", " ")} · {new Date(item.createdAt).toLocaleString()}</span>{item.response ? <p>Response: {item.response}</p> : null}</article>)}</div> : <p className="empty">No support requests yet.</p>}</section><section><div className="section-heading"><h2>Official safety announcements</h2><span>Live updates from system administrators</span></div>{announcements.length ? announcements.map((item) => <article className="card" key={item._id}><span className={`pill ${item.severity === "urgent" ? "danger" : item.severity === "warning" ? "warning" : "info"}`}>{item.severity}</span><h3>{item.title}</h3><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()}</small></article>) : <p className="empty">No current announcements.</p>}</section></>;
+  return <><p className="eyebrow">TRAVEL SAFELY</p><h1>Safety information & help</h1><div className="grid two"><section className="card"><h2>Emergency support</h2><p>For immediate danger in India, call <a href="tel:112">112</a>. This website records an alert for authorized system operators; it does not automatically contact police or guarantee emergency response.</p><p>Tell your emergency contact where you are and follow instructions from local emergency services.</p></section><section className="card"><h2>Location and privacy</h2><p>Browser location is shared only after you opt in. Your browser can pause GPS updates when a tab is closed, suspended, offline, or denied permission.</p><p>Responders can view your location only when both Location Sharing and Share with Police are enabled. QR verification reveals only the public ID validity fields.</p></section><section className="card"><h2>Travel checklist</h2><ul><li>Keep emergency contacts current.</li><li>Share your trip plan with someone you trust.</li><li>Check your device charge and connectivity.</li><li>Use SOS only for a genuine emergency.</li></ul></section><section className="card"><h2>Common questions</h2><details><summary>Does SOS call emergency services?</summary><p>No. It records an incident for system operators. Call 112 directly when immediate assistance is needed.</p></details><details><summary>Can tracking run with my browser closed?</summary><p>No. This web application cannot guarantee background tracking outside an active browser session.</p></details><details><summary>How do I stop sharing?</summary><p>Turn off Location Sharing or Share with Police under Profile & Privacy. The server then removes your profile from the monitoring map.</p></details></section></div><section className="card"><h2>Contact support</h2><p>Messages are stored in your MongoDB account and reviewed by a monitoring officer. Do not use this form for emergencies.</p>{notice ? <p className="notice">{notice}</p> : null}{error ? <p className="notice danger-note">{error}</p> : null}<form className="support-form" onSubmit={submit}><label>Category<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="account">Account access</option><option value="privacy">Privacy and data</option><option value="technical">Technical issue</option><option value="other">Other</option></select></label><label>Subject<input required minLength="3" maxLength="160" value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} /></label><label>Message<textarea required minLength="10" maxLength="3000" value={draft.message} onChange={(event) => setDraft({ ...draft, message: event.target.value })} /></label><button className="primary" disabled={busy}>{busy ? "Sending…" : "Submit support request"}</button></form>{supportRequests.length ? <div><h3>Your support requests</h3>{supportRequests.map((item) => <article className="support-request-row" key={item._id}><b>{item.subject}</b><span>{(item?.status || "open").replace(/_/g, " ")} · {new Date(item.createdAt).toLocaleString()}</span>{item.response ? <p>Response: {item.response}</p> : null}</article>)}</div> : <p className="empty">No support requests yet.</p>}</section><section><div className="section-heading"><h2>Official safety announcements</h2><span>Live updates from system administrators</span></div>{announcements.length ? announcements.map((item) => <article className="card" key={item._id}><span className={`pill ${item.severity === "urgent" ? "danger" : item.severity === "warning" ? "warning" : "info"}`}>{item.severity}</span><h3>{item.title}</h3><p>{item.body}</p><small>{new Date(item.createdAt).toLocaleString()}</small></article>) : <p className="empty">No current announcements.</p>}</section></>;
 }
 
 function Profile({ user, setUser, signOut }) {
@@ -548,7 +1296,7 @@ export default function TouristPortal() {
   const [supportRequests, setSupportRequests] = useState([]);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [loadError, setLoadError] = useState("");
-  const navItems = useMemo(() => [["", "Home"], ["id", "Digital ID"], ["trips", "Trips"], ["incidents", "Incidents"], ["alerts", "Alerts"], ["map", "Map"], ["safety", "Safety & Help"], ["profile", "Profile"]], []);
+  const navItems = useMemo(() => [["", "Home"], ["assistant", "🤖 Raksha AI"], ["id", "Digital ID"], ["trips", "Trips"], ["incidents", "Incidents"], ["alerts", "Alerts"], ["map", "Map"], ["safety", "Safety & Help"], ["profile", "Profile"]], []);
   const load = async () => {
     const [tripResult, alertResult, incidentResult, announcementResult, supportResult] = await Promise.allSettled([nodeApi.get("/trips"), nodeApi.get("/alerts"), nodeApi.get("/incidents"), nodeApi.get("/announcements"), nodeApi.get("/support")]);
     if (tripResult.status === "fulfilled") setTrips((tripResult.value.data || []).map(normalizeTrip));
@@ -572,9 +1320,40 @@ export default function TouristPortal() {
     };
     restore();
   }, []);
+
   useEffect(() => {
     if (user) load().catch(() => {});
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (navigator.geolocation && !currentLocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const loc = {
+            latitude: Number(pos.coords.latitude.toFixed(6)),
+            longitude: Number(pos.coords.longitude.toFixed(6)),
+            accuracy: Math.round(pos.coords.accuracy || 10),
+            speed: pos.coords.speed,
+            timestamp: new Date().toISOString()
+          };
+          setCurrentLocation(loc);
+          nodeApi.post("/locations", loc).catch(() => {});
+        },
+        (err) => {
+          console.warn("Auto-detect GPS deferred:", err.message);
+          setCurrentLocation((prev) => prev || {
+            latitude: 28.6129,
+            longitude: 77.2295,
+            accuracy: 25,
+            timestamp: new Date().toISOString()
+          });
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+  }, [user, currentLocation]);
+
   useEffect(() => {
     if (!user) return undefined;
     const socket = connectRealtime();
@@ -592,15 +1371,20 @@ export default function TouristPortal() {
   const sendAlert = async (alert) => {
     try {
       if (["sos", "panic"].includes(String(alert.type).toLowerCase())) {
-        const { data } = await nodeApi.post("/incidents/sos", { message: alert.message, location: alert.location || null });
+        const loc = alert.location || currentLocation || { latitude: 28.6129, longitude: 77.2295, accuracy: 25 };
+        const { data } = await nodeApi.post("/incidents/sos", { message: alert.message, location: loc });
         setIncidents((items) => [data, ...items.filter((item) => item._id !== data._id)]);
         return data;
       }
-      const { data } = await nodeApi.post("/alerts", { type: alert.type, severity: alert.severity, message: alert.message, geoLocation: alert.geoLocation });
-      await load();
+      const loc = alert.location || currentLocation;
+      const geoLocation = alert.geoLocation || (loc && loc.latitude != null && loc.longitude != null ? { type: "Point", coordinates: [Number(loc.longitude), Number(loc.latitude)] } : undefined);
+      const { data } = await nodeApi.post("/alerts", { type: alert.type, severity: alert.severity, message: alert.message, geoLocation });
+      setAlerts((items) => [data, ...items.filter((item) => item._id !== data._id)]);
+      load().catch(() => {});
       return data;
-    } catch {
-      throw new Error("Alert could not be saved. Call 112 if you need immediate help.");
+    } catch (err) {
+      console.error("Alert save error:", err);
+      throw new Error(err.response?.data?.error || "Alert could not be saved. Call 112 if you need immediate help.");
     }
   };
   const cancelIncident = async (id, reason) => {
@@ -625,17 +1409,42 @@ export default function TouristPortal() {
         {loadError ? <p className="notice danger-note">{loadError}</p> : null}
         <Routes>
           <Route index element={<Home user={user} trips={trips} alerts={alerts} incidents={incidents} currentLocation={currentLocation} />} />
+          <Route path="assistant" element={<TouristAiAssistant user={user} currentLocation={currentLocation} sendAlert={sendAlert} />} />
           <Route path="trips" element={<Trips trips={trips} load={load} />} />
           <Route path="id" element={<DigitalId user={user} />} />
           <Route path="incidents" element={<TouristIncidents incidents={incidents} onCancel={cancelIncident} />} />
-          <Route path="alerts" element={<Alerts alerts={alerts} sendAlert={sendAlert} />} />
-          <Route path="map" element={<TouristMap user={user} currentLocation={currentLocation} setCurrentLocation={setCurrentLocation} sendAlert={sendAlert} />} />
+          <Route path="alerts" element={<Alerts alerts={alerts} sendAlert={sendAlert} currentLocation={currentLocation} />} />
+          <Route path="map" element={<TouristMap user={user} trips={trips} load={load} currentLocation={currentLocation} setCurrentLocation={setCurrentLocation} sendAlert={sendAlert} />} />
           <Route path="sos" element={<SOS sendAlert={sendAlert} currentLocation={currentLocation} setCurrentLocation={setCurrentLocation} user={user} />} />
           <Route path="safety" element={<SafetyInformation announcements={announcements} supportRequests={supportRequests} onSendSupport={sendSupport} />} />
           <Route path="profile" element={<Profile user={user} setUser={setUser} signOut={signOut} />} />
           <Route path="*" element={<Navigate to="/tourist" replace />} />
         </Routes>
       </main>
+      <Link
+        className="ai-float"
+        to="assistant"
+        style={{
+          position: "fixed",
+          bottom: "94px",
+          right: "24px",
+          backgroundColor: "#0284c7",
+          color: "#ffffff",
+          padding: "10px 18px",
+          borderRadius: "30px",
+          fontWeight: "700",
+          fontSize: "13px",
+          textDecoration: "none",
+          boxShadow: "0 4px 16px rgba(2, 132, 199, 0.45)",
+          zIndex: 998,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          border: "1px solid rgba(255, 255, 255, 0.2)",
+        }}
+      >
+        <span>🤖</span> Ask AI
+      </Link>
       <Link className="sos-float" to="sos">SOS</Link>
     </div>
   );

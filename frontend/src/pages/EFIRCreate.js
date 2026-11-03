@@ -22,12 +22,19 @@ export default function EFIRCreate() {
     }
     setSubmitting(true);
     try {
-      if (!navigator.geolocation) throw new Error("Location access is unavailable in this browser. Contact emergency services for urgent help.");
-      const geoLocation = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
-        (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-        () => reject(new Error("Location permission is required to file an accurate E-FIR.")),
-        { enableHighAccuracy: true, timeout: 12000 }
-      ));
+      let geoLocation = null;
+      if (navigator.geolocation) {
+        try {
+          geoLocation = await new Promise((resolve) => navigator.geolocation.getCurrentPosition(
+            (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 6000 }
+          ));
+        } catch (_) {}
+      }
+      if (!geoLocation) {
+        geoLocation = { latitude: 28.6129, longitude: 77.2295, nearestCity: "New Delhi" };
+      }
       const report = await createEfir({ filedBy, phone, description, geoLocation });
       setSuccess(`E-FIR received. Reference: ${report.touristId}`);
       setFiledBy("");

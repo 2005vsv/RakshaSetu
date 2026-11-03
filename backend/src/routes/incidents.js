@@ -18,6 +18,284 @@ router.get("/public/verify/:digitalId", async (req, res) => {
   } catch { res.status(500).json({ error: "Could not verify tourist ID" }); }
 });
 
+
+// --- Public / Gateway Ingestion Endpoints (Resilient Emergency Access) ---
+
+// 1. Offline SMS Beacon Sync from Mobile App
+router.post("/offline-beacon", async (req, res) => {
+  try {
+    const jwt = require("jsonwebtoken");
+    const Alert = require("../models/Alert");
+    let touristUser = null;
+
+    // A. Check Authorization header if present
+    if (req.headers.authorization) {
+      try {
+        const token = req.headers.authorization.replace(/^Bearer\s+/i, "");
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || "local-development-secret-change-before-deployment");
+        if (decoded?.id) {
+          touristUser = await User.findById(decoded.id);
+        }
+      } catch (_) {}
+    }
+
+    // B. Match by digitalId or phone from beacon payload
+    if (!touristUser && req.body.digitalId) {
+      touristUser = await User.findOne({ digitalId: String(req.body.digitalId).toUpperCase() });
+    }
+    if (!touristUser && req.body.phone) {
+      touristUser = await User.findOne({ phone: req.body.phone });
+    }
+
+    // C. Fallback to any active tourist account
+    if (!touristUser) {
+      touristUser = (await User.findOne({ role: "user", accountStatus: "active" })) || (await User.findOne({ role: "user" }));
+    }
+
+    if (!touristUser) {
+      return res.status(400).json({ error: "No matching tourist record found" });
+    }
+
+    // De-duplication check by beacon ID
+    const beaconId = req.body.id || req.body.beaconId;
+    if (beaconId) {
+      const existing = await Incident.findOne({ dedupeKey: `offline:${beaconId}` });
+      if (existing) {
+        return res.status(200).json({ ...existing.toObject(), duplicate: true, synced: true });
+      }
+    }
+
+    // Extract GPS coordinates
+    const lat = req.body.location?.latitude ?? req.body.latitude;
+    const lng = req.body.location?.longitude ?? req.body.longitude;
+    const hasCoords = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
+
+    const touristName = req.body.touristName || touristUser.name || "Tourist";
+    const digitalId = req.body.digitalId || touristUser.digitalId || "DIG-TOURIST";
+    const rawMessage = req.body.message || "Emergency distress signal dispatched via Cellular SMS";
+    const formattedMessage = `[📴 OFFLINE SMS BEACON] ${rawMessage}`;
+
+    // Create Incident record
+    const incident = await Incident.create({
+      incidentRef: `RS-OFFLINE-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`,
+      tourist: touristUser._id,
+      dedupeKey: beaconId ? `offline:${beaconId}` : undefined,
+      kind: "sos",
+      severity: "high",
+      message: formattedMessage.slice(0, 1000),
+      location: hasCoords ? {
+        latitude: Number(lat),
+        longitude: Number(lng),
+        accuracy: req.body.location?.accuracy || 15,
+        recordedAt: new Date(req.body.timestamp || Date.now()),
+      } : undefined,
+      history: [{
+        status: "new",
+        note: `📴 Offline Distress Beacon received via Cellular SMS Network (Recipients: ${Array.isArray(req.body.recipients) ? req.body.recipients.join(', ') : '112 Emergency Line'}). Synced to Police Control Room.`,
+        actor: touristUser._id,
+        actorName: `${touristName} (Offline SMS)`,
+        at: new Date(),
+      }],
+    });
+
+    // Create Alert record for Alert Centre
+    let alertDoc = null;
+    try {
+      alertDoc = await Alert.create({
+        user: touristUser._id,
+        type: "sos",
+        severity: "high",
+        message: `🚨 [📴 OFFLINE SMS BEACON] Tourist ${touristName} (#${digitalId}): ${rawMessage}`,
+        geoLocation: hasCoords ? { type: "Point", coordinates: [Number(lng), Number(lat)] } : undefined,
+        location: hasCoords ? { latitude: Number(lat), longitude: Number(lng), recordedAt: new Date() } : undefined,
+        is_resolved: false,
+      });
+    } catch (aErr) {
+      console.warn("Failed to create Alert for offline beacon:", aErr.message);
+    }
+
+    // Realtime broadcast via Socket.IO
+    const io = req.app.get("io");
+    const incPayload = {
+      incident: {
+        ...incident.toObject(),
+        tourist: {
+          _id: touristUser._id,
+          name: touristName,
+          digitalId: digitalId,
+          phone: touristUser.phone,
+          emergencyContacts: touristUser.emergencyContacts,
+        },
+      },
+    };
+    io?.to("admins").emit("incident:new", incPayload);
+    io?.emit("incident:new", incPayload);
+
+    if (alertDoc) {
+      const alertPayload = {
+        alert: {
+          ...alertDoc.toObject(),
+          latitude: hasCoords ? Number(lat) : undefined,
+          longitude: hasCoords ? Number(lng) : undefined,
+          user: {
+            _id: touristUser._id,
+            name: touristName,
+            digitalId: digitalId,
+            phone: touristUser.phone,
+          },
+        },
+      };
+      io?.to("admins").emit("alert:new", alertPayload);
+      io?.emit("alert:new", alertPayload);
+    }
+
+    res.status(201).json({
+      success: true,
+      synced: true,
+      incident: incident.toObject(),
+      alert: alertDoc ? alertDoc.toObject() : null,
+    });
+  } catch (err) {
+    console.error("Offline beacon sync error:", err);
+    res.status(500).json({ error: "Failed to process offline beacon: " + err.message });
+  }
+});
+
+// 2. Inbound SMS Gateway (Twilio webhook / Cellular modem / Manual Ingestion)
+router.post("/sms-inbound", async (req, res) => {
+  try {
+    const Alert = require("../models/Alert");
+    const rawBody = String(req.body.Body || req.body.message || req.body.text || "").trim();
+    if (!rawBody) {
+      return res.status(400).json({ error: "SMS message text is required" });
+    }
+
+    // Parse Digital ID from SMS (e.g. #DIG-TOURIST, #RS-1234, etc.)
+    const digitalIdMatch = rawBody.match(/#([A-Z0-9_-]+)/i);
+    const digitalId = digitalIdMatch ? digitalIdMatch[1].toUpperCase() : null;
+
+    // Parse Tourist name from SMS (e.g. "Tourist John" or "Tourist Vaishnav")
+    const nameMatch = rawBody.match(/Tourist\s+([^#(]+)/i);
+    const parsedName = nameMatch ? nameMatch[1].trim() : null;
+
+    // Parse Lat & Lng from SMS (e.g. "Lat: 15.8152, Lng: 74.4875" or "q=15.8152,74.4875")
+    let lat = null;
+    let lng = null;
+    const coordsMatch = rawBody.match(/Lat:\s*([0-9.-]+)[,\s]+Lng:\s*([0-9.-]+)/i) || rawBody.match(/q=([0-9.-]+),([0-9.-]+)/i);
+    if (coordsMatch) {
+      lat = parseFloat(coordsMatch[1]);
+      lng = parseFloat(coordsMatch[2]);
+    }
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+
+    // Find tourist user
+    let touristUser = null;
+    if (digitalId) {
+      touristUser = await User.findOne({ digitalId });
+    }
+    if (!touristUser && req.body.From) {
+      const cleanPhone = String(req.body.From).replace(/\D/g, "").slice(-10);
+      touristUser = await User.findOne({ phone: { $regex: cleanPhone } });
+    }
+    if (!touristUser) {
+      touristUser = (await User.findOne({ role: "user", accountStatus: "active" })) || (await User.findOne({ role: "user" }));
+    }
+
+    const touristName = parsedName || touristUser?.name || "Tourist";
+    const refDigitalId = digitalId || touristUser?.digitalId || "DIG-TOURIST";
+
+    // Create Incident record
+    const incident = await Incident.create({
+      incidentRef: `RS-SMS-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`,
+      tourist: touristUser?._id,
+      dedupeKey: `sms:${Date.now()}:${crypto.randomBytes(2).toString("hex")}`,
+      kind: "sos",
+      severity: "high",
+      message: `[📴 INBOUND CELLULAR SMS] ${rawBody}`.slice(0, 1000),
+      location: hasCoords ? {
+        latitude: lat,
+        longitude: lng,
+        accuracy: 15,
+        recordedAt: new Date(),
+      } : undefined,
+      history: [{
+        status: "new",
+        note: `📴 Emergency Distress SMS received at Police Helpline Gateway (Sender: ${req.body.From || 'Cellular SMS Network'}). Auto-ingested into Control Room.`,
+        actor: touristUser?._id,
+        actorName: `${touristName} (112 SMS)`,
+        at: new Date(),
+      }],
+    });
+
+    // Create Alert record
+    let alertDoc = null;
+    try {
+      alertDoc = await Alert.create({
+        user: touristUser?._id,
+        type: "sos",
+        severity: "high",
+        message: `🚨 [📴 INBOUND SMS] Tourist ${touristName} (#${refDigitalId}): ${rawBody}`,
+        geoLocation: hasCoords ? { type: "Point", coordinates: [lng, lat] } : undefined,
+        location: hasCoords ? { latitude: lat, longitude: lng, recordedAt: new Date() } : undefined,
+        is_resolved: false,
+      });
+    } catch (aErr) {
+      console.warn("Failed to create Alert for SMS inbound:", aErr.message);
+    }
+
+    // Realtime broadcast via Socket.IO
+    const io = req.app.get("io");
+    const incPayload = {
+      incident: {
+        ...incident.toObject(),
+        tourist: {
+          _id: touristUser?._id,
+          name: touristName,
+          digitalId: refDigitalId,
+          phone: touristUser?.phone,
+          emergencyContacts: touristUser?.emergencyContacts,
+        },
+      },
+    };
+    io?.to("admins").emit("incident:new", incPayload);
+    io?.emit("incident:new", incPayload);
+
+    if (alertDoc) {
+      const alertPayload = {
+        alert: {
+          ...alertDoc.toObject(),
+          latitude: hasCoords ? lat : undefined,
+          longitude: hasCoords ? lng : undefined,
+          user: {
+            _id: touristUser?._id,
+            name: touristName,
+            digitalId: refDigitalId,
+            phone: touristUser?.phone,
+          },
+        },
+      };
+      io?.to("admins").emit("alert:new", alertPayload);
+      io?.emit("alert:new", alertPayload);
+    }
+
+    // Support Twilio XML response or JSON
+    if (req.headers["user-agent"]?.includes("Twilio") || req.body.AccountSid) {
+      res.type("text/xml");
+      return res.send("<Response><Message>Emergency SOS received. Responders alerted.</Message></Response>");
+    }
+
+    res.status(201).json({
+      success: true,
+      incident: incident.toObject(),
+      alert: alertDoc ? alertDoc.toObject() : null,
+      parsed: { touristName, digitalId: refDigitalId, latitude: lat, longitude: lng },
+    });
+  } catch (err) {
+    console.error("SMS inbound error:", err);
+    res.status(500).json({ error: "Failed to process inbound SMS: " + err.message });
+  }
+});
+
 router.use(auth);
 router.get("/", async (req, res) => {
   try {
@@ -49,9 +327,40 @@ router.post("/sos", sosLimiter, async (req, res) => {
       location: hasLat ? { latitude: Number(latitude), longitude: Number(longitude), accuracy: Number.isFinite(Number(accuracy)) ? Number(accuracy) : undefined, recordedAt: recordedAt ? new Date(recordedAt) : new Date() } : undefined,
       history: [{ status: "new", note: "SOS submitted", actor: user._id, actorName: user.name || "Tourist" }],
     });
+    const Alert = require("../models/Alert");
+    let alertDoc = null;
+    try {
+      alertDoc = await Alert.create({
+        user: user._id,
+        type: "sos",
+        severity: "high",
+        message: `🚨 Emergency SOS: ${user.name || "Tourist"} (${user.digitalId || "ID"}) - ${incident.message}`,
+        geoLocation: hasLat ? { type: "Point", coordinates: [Number(longitude), Number(latitude)] } : undefined,
+        location: hasLat ? { latitude: Number(latitude), longitude: Number(longitude), recordedAt: new Date() } : undefined,
+        is_resolved: false,
+      });
+    } catch (aErr) {
+      console.warn("Failed to create Alert for SOS:", aErr.message);
+    }
+
     const io = req.app.get("io");
-    io?.to("admins").emit("incident:new", { incident: { ...incident.toObject(), tourist: { _id: user._id, name: user.name, digitalId: user.digitalId, phone: user.phone, emergencyContacts: user.emergencyContacts } } });
+    const incPayload = { incident: { ...incident.toObject(), tourist: { _id: user._id, name: user.name, digitalId: user.digitalId, phone: user.phone, emergencyContacts: user.emergencyContacts } } };
+    io?.to("admins").emit("incident:new", incPayload);
+    io?.emit("incident:new", incPayload);
     io?.to(`user:${user._id}`).emit("incident:updated", { incident: incident.toObject() });
+
+    if (alertDoc) {
+      const alertPayload = {
+        alert: {
+          ...alertDoc.toObject(),
+          latitude: hasLat ? Number(latitude) : undefined,
+          longitude: hasLat ? Number(longitude) : undefined,
+          user: { _id: user._id, name: user.name, digitalId: user.digitalId, phone: user.phone }
+        }
+      };
+      io?.to("admins").emit("alert:new", alertPayload);
+      io?.emit("alert:new", alertPayload);
+    }
     res.status(201).json(incident);
   } catch (error) {
     if (error.code === 11000) {
@@ -109,6 +418,15 @@ router.patch("/:id/status", adminOnly, async (req, res) => {
       incident.assignedName = "";
     }
     if (status === "resolved") incident.resolution = note.trim();
+    if (["resolved", "cancelled"].includes(status)) {
+      const Alert = require("../models/Alert");
+      await Alert.updateMany(
+        { user: incident.tourist?._id || incident.tourist, type: "sos", is_resolved: false },
+        { $set: { is_resolved: true } }
+      ).catch(() => {});
+      io?.to("admins").emit("alert:updated", {});
+      io?.emit("alert:updated", {});
+    }
     incident.history.push({ status, note: note.trim(), actor: req.user.id, actorName: req.user.name || req.user.email || "Administrator" });
     await incident.save();
     await incident.populate("tourist", "name email phone digitalId emergencyContacts");
@@ -121,6 +439,108 @@ router.patch("/:id/status", adminOnly, async (req, res) => {
     io?.to(`user:${incident.tourist?._id || incident.tourist}`).emit("incident:updated", payload);
     res.json(incident);
   } catch (error) { res.status(500).json({ error: "Could not update incident" }); }
+});
+
+router.post("/:id/assign-police", adminOnly, async (req, res) => {
+  try {
+    const { officerIds = [], note = "" } = req.body;
+    if (!Array.isArray(officerIds) || !officerIds.length) {
+      return res.status(400).json({ error: "Please select at least one police officer to assign." });
+    }
+
+    const incident = await Incident.findById(req.params.id).populate("tourist", "name email phone digitalId emergencyContacts");
+    if (!incident) return res.status(404).json({ error: "Incident not found" });
+
+    const officers = await User.find({ _id: { $in: officerIds } }).select("name phone policeBadge policeStation policeRank");
+    if (!officers.length) return res.status(400).json({ error: "No matching police officers found" });
+
+    incident.assignedPolice = incident.assignedPolice || [];
+    const addedNames = [];
+
+    for (const off of officers) {
+      const exists = incident.assignedPolice.find((p) => String(p.officer) === String(off._id));
+      if (!exists) {
+        incident.assignedPolice.push({
+          officer: off._id,
+          name: off.name,
+          badge: off.policeBadge || "PCR",
+          station: off.policeStation || "Belagavi Police Station",
+          phone: off.phone || "112",
+          status: "assigned",
+          assignedAt: new Date(),
+          policeNote: note || "Assigned by Control Room Admin",
+        });
+        addedNames.push(`${off.name} (${off.policeStation || off.policeBadge})`);
+      }
+    }
+
+    incident.status = "assigned";
+    if (!incident.assignedTo && officers[0]) {
+      incident.assignedTo = officers[0]._id;
+      incident.assignedName = officers.map((o) => o.name).join(", ");
+    } else if (officers.length) {
+      incident.assignedName = officers.map((o) => o.name).join(", ");
+    }
+
+    incident.history.push({
+      status: "assigned",
+      note: `🚔 Police Dispatched & Assigned by Admin: ${addedNames.join("; ")}. ${note ? "Note: " + note : ""}`,
+      actor: req.user.id,
+      actorName: req.user.name || "Administrator",
+      at: new Date(),
+    });
+
+    await incident.save();
+
+    // Also update / link Efir
+    const Efir = require("../models/Efir");
+    await Efir.updateMany(
+      { $or: [{ incidentId: incident._id }, { touristId: incident.tourist?.digitalId }] },
+      {
+        $set: { status: "assigned" },
+        $addToSet: {
+          assignedOfficers: {
+            $each: officers.map((o) => ({
+              id: o._id,
+              name: o.name,
+              badge: o.policeBadge,
+              station: o.policeStation,
+              phone: o.phone,
+              status: "assigned",
+              assignedAt: new Date(),
+              policeNote: note,
+            })),
+          },
+        },
+      }
+    ).catch(() => {});
+
+    // Also update any active Alert for this tourist
+    const Alert = require("../models/Alert");
+    const stationName = officers.map((o) => `${o.name} (${o.policeStation?.split(",")[0] || o.policeBadge})`).join(", ");
+    await Alert.updateMany(
+      { user: incident.tourist?._id || incident.tourist, is_resolved: false },
+      { $set: { assigned_station_id: String(officers[0]._id), assigned_station_name: stationName } }
+    ).catch(() => {});
+
+    const io = req.app.get("io");
+    const payload = { incident: incident.toObject() };
+    io?.emit("incident:updated", payload);
+    io?.to("admins").emit("incident:updated", payload);
+    io?.to("admins").emit("alert:updated", {});
+    io?.to("police").emit("incident:updated", payload);
+    for (const off of officers) {
+      io?.to(`police:${off._id}`).emit("incident:updated", payload);
+    }
+    if (incident.tourist?._id) {
+      io?.to(`user:${incident.tourist._id}`).emit("incident:updated", payload);
+    }
+
+    res.json({ incident, assignedPolice: incident.assignedPolice });
+  } catch (err) {
+    console.error("Assign police error:", err);
+    res.status(500).json({ error: "Failed to assign police officers" });
+  }
 });
 
 router.get("/admin/metrics", adminOnly, async (_req, res) => {

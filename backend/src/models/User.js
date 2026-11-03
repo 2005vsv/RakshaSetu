@@ -7,8 +7,12 @@ const UserSchema = new mongoose.Schema({
   sessionVersion: { type: Number, default: 0 },
   passwordResetTokenHash: { type: String, default: undefined, select: false },
   passwordResetExpires: { type: Date, default: undefined, select: false },
-  role: { type: String, enum: ["user", "admin"], default: "user" },
-  adminRole: { type: String, enum: ["super_admin", "monitoring_officer", "responder"], default: "super_admin" },
+  role: { type: String, enum: ["user", "admin", "police"], default: "user" },
+  adminRole: { type: String, enum: ["super_admin", "monitoring_officer", "responder", "police"], default: "super_admin" },
+  policeBadge: { type: String, default: "" },
+  policeStation: { type: String, default: "" },
+  policeRank: { type: String, default: "Officer" },
+  isAvailable: { type: Boolean, default: true },
   accountStatus: { type: String, enum: ["active", "suspended", "pending"], default: "active", index: true },
   verificationStatus: { type: String, enum: ["unverified", "verified", "flagged"], default: "unverified", index: true },
   flagReason: { type: String, default: "", maxlength: 500 },
@@ -24,7 +28,7 @@ const UserSchema = new mongoose.Schema({
   }],
   preferences: {
     notifications: { type: Boolean, default: true },
-    locationSharing: { type: Boolean, default: false },
+    locationSharing: { type: Boolean, default: true },
     shareWithPolice: { type: Boolean, default: true }
   },
   createdAt: { type: Date, default: Date.now }
