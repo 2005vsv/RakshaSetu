@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "RakshaSetu Tourist",
+    "name": "RakshaSetu",
     "slug": "rakshasetu-tourist",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -27,7 +27,8 @@
         "ACCESS_BACKGROUND_LOCATION",
         "CALL_PHONE",
         "VIBRATE",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0f172a",
@@ -38,7 +39,20 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0284c7"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "70a58dc7-d3f7-4d93-8d50-11d017af4c81"
+      }
+    },
+    "owner": "vaishnav2005"
   }
 }

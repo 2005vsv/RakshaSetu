@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { AuthProvider } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { notificationService } from './src/services/notificationService';
+
+export const navigationRef = createNavigationContainerRef();
 
 if (global.ErrorUtils) {
   const defaultHandler = global.ErrorUtils.getGlobalHandler();
@@ -17,10 +20,15 @@ if (global.ErrorUtils) {
 }
 
 export default function App() {
+  useEffect(() => {
+    notificationService.setNavigationRef(navigationRef);
+    notificationService.initialize();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <StatusBar style="light" />
           <RootNavigator />
         </NavigationContainer>
