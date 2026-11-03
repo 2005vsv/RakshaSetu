@@ -16,11 +16,23 @@ dotenv.config();
 if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
   throw new Error("Set a private JWT_SECRET containing at least 32 characters before starting production");
 }
+const allowedOrigins = process.env.FRONTEND_ORIGIN
+  ? process.env.FRONTEND_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+const corsOrigin = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+    return callback(null, origin);
+  }
+  return callback(null, origin);
+};
+
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: process.env.FRONTEND_ORIGIN || ["http://localhost:3000", "http://127.0.0.1:3000"], credentials: true },
+  cors: { origin: corsOrigin, credentials: true },
 });
 app.set("io", io);
 const applyRetentionPolicy = async () => {
@@ -75,7 +87,7 @@ io.on("connection", (socket) => {
   });
 });
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || ["http://localhost:3000", "http://127.0.0.1:3000"],
+  origin: corsOrigin,
   credentials: true,
 }));
 app.use(express.json());

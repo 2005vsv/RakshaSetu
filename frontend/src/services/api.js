@@ -1,7 +1,8 @@
 import axios from "axios";
 
 // The web app reads and writes operational data through the MongoDB-backed Node API.
-const NODE_API_BASE_URL = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5000";
+const rawUrl = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5001";
+const NODE_API_BASE_URL = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
 
 export const nodeApi = axios.create({ baseURL: NODE_API_BASE_URL, withCredentials: true });
 

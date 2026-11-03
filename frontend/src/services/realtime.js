@@ -1,6 +1,7 @@
 import { io } from "socket.io-client";
 
-const SOCKET_URL = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5001";
+const rawSocketUrl = process.env.REACT_APP_NODE_API_BASE_URL || "http://localhost:5001";
+const SOCKET_URL = rawSocketUrl.startsWith("http") ? rawSocketUrl : `https://${rawSocketUrl}`;
 
 export const connectRealtime = () => {
   const token = typeof window !== "undefined"
