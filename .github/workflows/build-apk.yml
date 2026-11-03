@@ -1,0 +1,111 @@
+name: Build Standalone Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build RakshaSetu APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: 📦 Install Mobile Dependencies
+        working-directory: mobile
+        run: |
+          npm install --legacy-peer-deps
+
+      - name: ⚙️ Generate Native Android Project (Expo Prebuild)
+        working-directory: mobile
+        run: |
+          npx expo prebuild --platform android --clean
+
+      - name: 🔑 Configure Release Signing
+        working-directory: mobile/android
+        run: |
+          # Ensure release APK is signed with standard keystore so it installs immediately on any Android device
+          python3 -c '
+          path = "app/build.gradle"
+          with open(path, "r") as f:
+              content = f.read()
+          if "signingConfig signingConfigs.debug" not in content:
+              content = content.replace("buildTypes {", "buildTypes {\n        release {\n            signingConfig signingConfigs.debug\n        }")
+              with open(path, "w") as f:
+                  f.write(content)
+          '
+          chmod +x gradlew
+
+      - name: 🚀 Build Standalone Release APK with Gradle
+        working-directory: mobile/android
+        run: |
+          ./gradlew assembleRelease --no-daemon
+
+      - name: 🏷️ Rename APK
+        working-directory: mobile/android/app/build/outputs/apk/release
+        run: |
+          cp app-release.apk RakshaSetu.apk
+          ls -lh RakshaSetu.apk
+
+      - name: 📤 Upload APK Artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: RakshaSetu-APK
+          path: mobile/android/app/build/outputs/apk/release/RakshaSetu.apk
+          if-no-files-found: error
+
+      - name: 🌐 Publish Standalone APK Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v1.0.0
+          name: "RakshaSetu Tourist Safety v1.0.0 Standalone Android APK"
+          body: |
+            ### 🛡️ RakshaSetu - Standalone Android Application (.apk)
+
+            **Official Project Submission Build**
+
+            #### ✨ Key Features in this Build:
+            - **24/7 Cloud Connectivity:** Pre-configured with live Render cloud backend (`https://rakshasetu-backend-4775.onrender.com`).
+            - **Real-Time Android Notifications:** Instant system alerts in the top notification tray for:
+              - ⚠️ High-Risk and Restricted Zone creations.
+              - 📢 Official safety announcements.
+              - 🚓 Police dispatch confirmations & status updates.
+              - 💬 Admin support ticket replies.
+            - **One-Tap SOS & Offline Cellular Beacon:** Instant emergency alerting even without mobile data.
+            - **Real-Time Tourist Safety Radar:** Safe havens, live routing avoiding danger zones, and digital tourist ID verification.
+
+            #### 📲 Installation Instructions:
+            1. Download `RakshaSetu.apk` directly onto your Android device.
+            2. Tap the downloaded file to install.
+            3. Grant Location and Notification permissions when prompted.
+          files: mobile/android/app/build/outputs/apk/release/RakshaSetu.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
