@@ -34,8 +34,6 @@ services:
   - type: web
     name: rakshasetu-frontend
     runtime: static
-    plan: free
-    region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: build
@@ -50,3 +48,4 @@ services:
           type: web
           name: rakshasetu-backend
           property: host
+
