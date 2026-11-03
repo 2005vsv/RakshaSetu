@@ -51,7 +51,7 @@ jobs:
       - name: 🚀 Build Standalone Release APK with Gradle
         working-directory: mobile/android
         run: |
-          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --stacktrace
 
       - name: 🏷️ Collect and Rename Standalone APK
         working-directory: mobile/android
