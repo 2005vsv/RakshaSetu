@@ -4,20 +4,21 @@ const Announcement = require('../models/Announcement');
 
 // Current official release configuration
 const APP_RELEASE_CONFIG = {
-  latestVersion: '1.0.1',
-  latestVersionCode: 2,
+  latestVersion: '1.0.2',
+  latestVersionCode: 3,
   minSupportedVersion: '1.0.0',
-  title: 'RakshaSetu v1.0.1 Update Available',
+  title: 'RakshaSetu v1.0.2 Update Available',
   releaseDate: 'November 2026',
   releaseNotes: [
+    '✅ Version Display Fixed: Profile now correctly shows installed version.',
     '⌨️ Keyboard Auto-Scroll: Password & trip planning inputs never hidden.',
     '🗺️ Place Search Autocomplete: Real-time destination suggestions.',
     '📱 3-Button Navigation: Full clearance above phone navigation bar.',
     '🤖 Enhanced Raksha AI: Math calculations & general knowledge.',
     '📴 Direct Offline SMS: Direct 1-tap message to emergency contacts.'
   ],
-  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.1/RakshaSetu.apk',
-  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.1',
+  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.2/RakshaSetu.apk',
+  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.2',
   forceUpdate: false,
 };
 
@@ -48,8 +49,8 @@ router.post('/broadcast', async (req, res) => {
     if (io) {
       io.emit('app:update', updatePayload);
       io.emit('announcement:new', {
-        title: '🚀 RakshaSetu v1.0.1 Update Available',
-        message: 'A new update with keyboard fixes, place search suggestions, and enhanced AI is ready. Tap to download!',
+        title: '🚀 RakshaSetu v1.0.2 Update Available',
+        message: 'A new update fixing the version display, keyboard issues, place search suggestions, and enhanced AI is ready. Tap to download!',
         severity: 'info',
         createdAt: new Date().toISOString(),
       });
@@ -58,8 +59,8 @@ router.post('/broadcast', async (req, res) => {
     // 2. Also record in Announcements collection for persistence
     try {
       await Announcement.create({
-        title: '🚀 RakshaSetu App Update Available (v1.0.1)',
-        message: 'New release v1.0.1 is available with keyboard fixes, place search suggestions & AI upgrades. Please update your app.',
+        title: '🚀 RakshaSetu App Update Available (v1.0.2)',
+        message: 'New release v1.0.2 is available with version display fix, keyboard fixes, place search suggestions & AI upgrades. Please update your app.',
         category: 'general',
         isActive: true,
       });
