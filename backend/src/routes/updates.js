@@ -16,8 +16,8 @@ const APP_RELEASE_CONFIG = {
     '🤖 Enhanced Raksha AI: Math calculations & general knowledge.',
     '📴 Direct Offline SMS: Direct 1-tap message to emergency contacts.'
   ],
-  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk',
-  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.0',
+  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.1/RakshaSetu.apk',
+  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.1',
   forceUpdate: false,
 };
 

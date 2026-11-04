@@ -62,7 +62,7 @@ class NotificationService {
       Notifications.addNotificationResponseReceivedListener((response) => {
         const data = response?.notification?.request?.content?.data;
         if (data?.action === 'APP_UPDATE') {
-          Linking.openURL(data.url || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk').catch(() => {});
+          Linking.openURL(data.url || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.1/RakshaSetu.apk').catch(() => {});
           return;
         }
         if (data?.screen && this.navigationRef) {

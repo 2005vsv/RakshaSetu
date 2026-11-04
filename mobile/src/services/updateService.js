@@ -124,7 +124,7 @@ class UpdateService {
    * Downloads the APK file internally into app cache and launches the Android installer
    */
   async downloadAndInstallUpdate(url, onProgress) {
-    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk';
+    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.1/RakshaSetu.apk';
 
     try {
       const FileSystem = require('expo-file-system');

@@ -76,8 +76,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/heads/main')
         with:
-          tag_name: v1.0.0
-          name: "RakshaSetu Tourist Safety v1.0.0 Standalone Android APK"
+          tag_name: v1.0.1
+          name: "RakshaSetu Tourist Safety v1.0.1 Standalone Android APK"
           body: |
             ### 🛡️ RakshaSetu - Standalone Android Application (.apk)
 
