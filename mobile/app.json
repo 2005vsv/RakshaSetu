@@ -2,7 +2,7 @@
   "expo": {
     "name": "RakshaSetu",
     "slug": "rakshasetu-tourist",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -29,7 +29,6 @@
         "VIBRATE",
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
-        "SEND_SMS",
         "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
