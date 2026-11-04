@@ -11,6 +11,10 @@ export const Colors = {
   surface: '#1e293b',    // Slate 800
   surfaceLight: '#334155', // Slate 700
   card: '#1e293b',
+  cardBg: '#1e293b',
+  cardBackground: '#1e293b',
+  modalBg: '#0f172a',
+  modalOverlay: 'rgba(0, 0, 0, 0.88)',
   
   // Emergency / SOS
   danger: '#ef4444',

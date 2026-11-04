@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
@@ -15,6 +16,10 @@ import updateService from '../services/updateService';
 export default function UpdateModal() {
   const [visible, setVisible] = useState(false);
   const [updateData, setUpdateData] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0); // 0 to 1
+  const [downloadStats, setDownloadStats] = useState({ downloadedMB: '0.0', totalMB: '52.6' });
+  const [installStatus, setInstallStatus] = useState('');
 
   useEffect(() => {
     // 1. Subscribe to update service events (both startup check & realtime broadcasts)
@@ -38,14 +43,40 @@ export default function UpdateModal() {
 
   if (!visible || !updateData) return null;
 
-  const handleUpdatePress = () => {
-    updateService.startUpdate(updateData.downloadUrl);
-    if (!updateData.forceUpdate) {
-      setVisible(false);
+  const handleUpdatePress = async () => {
+    setDownloading(true);
+    setProgress(0.05);
+    setInstallStatus('Connecting to download server...');
+
+    try {
+      await updateService.downloadAndInstallUpdate(updateData.downloadUrl, (info) => {
+        if (info?.progress !== undefined) {
+          setProgress(Math.max(0.05, Math.min(1, info.progress)));
+          const dlMB = (info.writtenBytes / (1024 * 1024)).toFixed(1);
+          const totMB = info.totalBytes > 0 ? (info.totalBytes / (1024 * 1024)).toFixed(1) : '52.6';
+          setDownloadStats({ downloadedMB: dlMB, totalMB: totMB });
+          setInstallStatus(`Downloading update (${dlMB} MB / ${totMB} MB)...`);
+        }
+        if (info?.status === 'INSTALLING' || info?.percentage >= 100) {
+          setProgress(1);
+          setInstallStatus('Download complete! Opening package installer...');
+        }
+      });
+    } catch (e) {
+      console.warn('Update press error:', e);
+    } finally {
+      // Auto-dismiss after installer opens
+      setTimeout(() => {
+        if (!updateData.forceUpdate) {
+          setDownloading(false);
+          setVisible(false);
+        }
+      }, 4000);
     }
   };
 
   const handleDismiss = () => {
+    if (downloading) return;
     setVisible(false);
   };
 
@@ -97,19 +128,42 @@ export default function UpdateModal() {
             </ScrollView>
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.btnRow}>
-            {!updateData.forceUpdate && (
-              <TouchableOpacity style={styles.laterBtn} onPress={handleDismiss} activeOpacity={0.8}>
-                <Text style={styles.laterBtnText}>Later</Text>
-              </TouchableOpacity>
-            )}
+          {/* Action Buttons or Live Download Progress */}
+          {downloading ? (
+            <View style={styles.downloadProgressCard}>
+              <View style={styles.progressHeaderRow}>
+                <ActivityIndicator size="small" color="#38bdf8" style={{ marginRight: 8 }} />
+                <Text style={styles.progressStatusText} numberOfLines={1}>
+                  {installStatus || 'Downloading update package...'}
+                </Text>
+              </View>
 
-            <TouchableOpacity style={styles.updateBtn} onPress={handleUpdatePress} activeOpacity={0.85}>
-              <Ionicons name="download-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.updateBtnText}>Update Now</Text>
-            </TouchableOpacity>
-          </View>
+              {/* Progress Bar Track */}
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${Math.round(progress * 100)}%` }]} />
+              </View>
+
+              <View style={styles.progressMetaRow}>
+                <Text style={styles.progressPercentText}>{Math.round(progress * 100)}% Complete</Text>
+                <Text style={styles.progressBytesText}>
+                  {downloadStats.downloadedMB} MB / {downloadStats.totalMB} MB
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.btnRow}>
+              {!updateData.forceUpdate && (
+                <TouchableOpacity style={styles.laterBtn} onPress={handleDismiss} activeOpacity={0.8}>
+                  <Text style={styles.laterBtnText}>Later</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.updateBtn} onPress={handleUpdatePress} activeOpacity={0.85}>
+                <Ionicons name="download-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.updateBtnText}>Update Now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -267,6 +321,55 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
+  },
+  downloadProgressCard: {
+    width: '100%',
+    backgroundColor: '#1e293b',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#0284c7',
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  progressStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38bdf8',
+    flex: 1,
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0f172a',
+    overflow: 'hidden',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#38bdf8',
+    borderRadius: 4,
+  },
+  progressMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressPercentText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#10b981',
+  },
+  progressBytesText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94a3b8',
   },
 });
 

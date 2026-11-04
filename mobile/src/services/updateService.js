@@ -120,21 +120,72 @@ class UpdateService {
   }
 
   /**
+   * Internal In-App APK Download with Live Progress
+   * Downloads the APK file internally into app cache and launches the Android installer
+   */
+  async downloadAndInstallUpdate(url, onProgress) {
+    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk';
+
+    try {
+      const FileSystem = require('expo-file-system');
+      const destination = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}RakshaSetu_v1.0.1.apk`;
+
+      // Clean old temp APK if present
+      try {
+        const info = await FileSystem.getInfoAsync(destination);
+        if (info.exists) {
+          await FileSystem.deleteAsync(destination, { idempotent: true });
+        }
+      } catch (_) {}
+
+      // Start resumable in-app download
+      const downloadResumable = FileSystem.createDownloadResumable(
+        targetUrl,
+        destination,
+        {},
+        (dp) => {
+          const total = dp.totalBytesExpectedToWrite;
+          const written = dp.totalBytesWritten;
+          const pct = total > 0 ? written / total : 0;
+          if (onProgress) {
+            onProgress({
+              progress: pct,
+              writtenBytes: written,
+              totalBytes: total,
+              percentage: Math.min(100, Math.round(pct * 100)),
+            });
+          }
+        }
+      );
+
+      const res = await downloadResumable.downloadAsync();
+      const localUri = res?.uri || destination;
+
+      if (onProgress) {
+        onProgress({ progress: 1, percentage: 100, status: 'INSTALLING' });
+      }
+
+      // Launch native Android package installer directly on screen
+      if (Platform.OS === 'android') {
+        const contentUri = await FileSystem.getContentUriAsync(localUri);
+        await Linking.openURL(contentUri);
+      } else {
+        await Linking.openURL(targetUrl);
+      }
+
+      return { success: true, localUri };
+    } catch (err) {
+      console.warn('[UpdateService] In-app download fallback to browser:', err.message);
+      await Linking.openURL(targetUrl).catch(() => {});
+      return { success: false, fallback: true, error: err.message };
+    }
+  }
+
+  /**
    * Open the direct APK download or GitHub Release page
    */
   async startUpdate(url) {
-    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk';
-    try {
-      const canOpen = await Linking.canOpenURL(targetUrl);
-      if (canOpen) {
-        await Linking.openURL(targetUrl);
-      } else {
-        await Linking.openURL('https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.0');
-      }
-    } catch (e) {
-      console.error('Failed to open download link:', e);
-      Linking.openURL('https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.0').catch(() => {});
-    }
+    return this.downloadAndInstallUpdate(url);
   }
 }
 
