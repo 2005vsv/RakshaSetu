@@ -109,11 +109,9 @@ class EmergencyService {
     const resolvedCoords = coords || locationService.lastLocation || null;
     const message = this.formatDistressSms(user, resolvedCoords) + (customNote ? ` Note: ${customNote}` : '');
 
-    // Target recipients: registered emergency contact + dummy police helpline (112)
-    const primaryContact = user?.emergencyContacts?.[0]?.phone;
-    let recipients = [];
-    if (primaryContact) recipients.push(primaryContact);
-    recipients.push('112');
+    // Target recipient: registered emergency contact phone
+    const rawContact = user?.emergencyContacts?.[0]?.phone || user?.emergencyContactPhone || '';
+    const cleanPhone = String(rawContact).replace(/[^0-9+]/g, '').trim();
 
     // Create local offline beacon record
     const beaconRecord = {
@@ -130,7 +128,7 @@ class EmergencyService {
             accuracy: resolvedCoords.accuracy || 15,
           }
         : null,
-      recipients,
+      recipients: cleanPhone ? [cleanPhone] : ['Emergency Family Contact'],
       synced: false,
     };
 
@@ -144,23 +142,22 @@ class EmergencyService {
       console.warn('Could not save offline beacon locally:', storageErr.message);
     }
 
-    // Launch native SMS app with auto-populated message and recipients
+    // Directly open default SMS app targeting the emergency contact phone number
     try {
-      const recipientStr = Platform.OS === 'android' ? recipients.join(',') : recipients[0];
-      const separator = Platform.OS === 'ios' ? '&' : '?';
-      const smsUrl = `sms:${recipientStr}${separator}body=${encodeURIComponent(message)}`;
+      if (cleanPhone) {
+        // Direct smsto scheme on Android bypasses chooser/picker dialogs
+        const smsUrl = Platform.OS === 'android'
+          ? `smsto:${cleanPhone}?body=${encodeURIComponent(message)}`
+          : `sms:${cleanPhone}&body=${encodeURIComponent(message)}`;
 
-      const canOpen = await Linking.canOpenURL(smsUrl);
-      if (canOpen) {
         await Linking.openURL(smsUrl);
       } else {
-        // Fallback for single recipient if multi-recipient isn't supported by device
-        const fallbackUrl = `sms:${recipients[0]}${separator}body=${encodeURIComponent(message)}`;
-        await Linking.openURL(fallbackUrl);
+        // If tourist has not saved an emergency contact phone yet
+        const genericSmsUrl = `sms:?body=${encodeURIComponent(message)}`;
+        await Linking.openURL(genericSmsUrl);
       }
     } catch (smsErr) {
-      console.warn('Native SMS open failed:', smsErr.message);
-      // Still show alert with the message text so tourist can copy/send manually
+      console.warn('Direct SMS open failed:', smsErr.message);
       Alert.alert('Emergency SMS Beacon Prepared', message);
     }
 

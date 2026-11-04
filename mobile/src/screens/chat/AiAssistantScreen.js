@@ -363,7 +363,7 @@ export default function AiAssistantScreen({ navigation }) {
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
         );
         if (!hasPermission) {
-          await PermissionsAndroid.request(
+          const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
             {
               title: 'Raksha AI Microphone Permission',
@@ -372,6 +372,12 @@ export default function AiAssistantScreen({ navigation }) {
               buttonNegative: 'Cancel',
             }
           );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Microphone Permission Needed',
+              'Microphone permission was not granted. You can select any question from the list below or type your question.'
+            );
+          }
         }
       } catch (e) {
         console.warn('Android audio permission error:', e);

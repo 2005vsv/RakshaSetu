@@ -1,11 +1,10 @@
 const { buildGeminiPrompt } = require('./ragService');
 
 const CANDIDATE_MODELS = [
-  'gemini-3.5-flash-lite',
-  'gemini-flash-latest',
-  'gemini-3.5-flash',
-  'gemini-3.8-flash',
-  'gemini-3.1-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-2.0-flash',
+  'gemini-1.5-pro',
 ];
 
 /**
@@ -207,6 +206,39 @@ function generateSmartLocalFallback(query = '', context = {}) {
   const hospDist = formatDist(nearestHospital);
   const pharmDist = formatDist(nearestPharmacy);
 
+  // 1. Math Calculation Queries (e.g. 100+200, 50 * 4, 15 / 3, what is 100+200)
+  const cleanMathQuery = q.replace(/^(what\s+is|calculate|compute|\?|=|please)\s*/i, '').trim();
+  const mathMatch = cleanMathQuery.match(/(\d+(?:\.\d+)?)\s*([\+\-\*\/xX])\s*(\d+(?:\.\d+)?)/);
+  if (mathMatch) {
+    const num1 = parseFloat(mathMatch[1]);
+    const rawOp = mathMatch[2];
+    const op = rawOp.toLowerCase() === 'x' ? '*' : rawOp;
+    const num2 = parseFloat(mathMatch[3]);
+    let result = 0;
+    if (op === '+') result = num1 + num2;
+    else if (op === '-') result = num1 - num2;
+    else if (op === '*') result = num1 * num2;
+    else if (op === '/') result = num2 !== 0 ? (num1 / num2) : 'Undefined (cannot divide by zero)';
+
+    return `### 🧮 Calculation Result\n\n` +
+      `**${num1} ${rawOp} ${num2} = ${result}**\n\n` +
+      `I can solve your travel budgeting calculations or assist you with any questions during your journey!\n\n` +
+      `[ACTIONS: OPEN_RADAR, OPEN_VOICE_BOARD]\n` +
+      `[SUGGESTIONS: Is my current location safe? | Show me nearby tourist attractions | Where is the nearest hospital & police?]`;
+  }
+
+  // 2. Specific General Knowledge Highlights (e.g. Virat Kohli, sports, trivia)
+  if (q.includes('virat') || q.includes('kohli')) {
+    return `### 🏏 Virat Kohli\n\n` +
+      `**Virat Kohli** is an internationally renowned Indian cricketer and former captain of the Indian National Cricket Team. Widely considered one of the greatest batsmen of all time, he has scored over 80 international centuries across Tests, ODIs, and T20Is.\n\n` +
+      `- **Role:** Top-order Batsman\n` +
+      `- **IPL Team:** Royal Challengers Bengaluru (RCB)\n` +
+      `- **Major Achievements:** ICC Men's Player of the Decade (2011–2020), 2011 ICC Cricket World Cup Champion, and 2024 ICC Men's T20 World Cup Champion.\n\n` +
+      `How else can I assist your travel or knowledge inquiries today?\n\n` +
+      `[ACTIONS: OPEN_RADAR, OPEN_VOICE_BOARD]\n` +
+      `[SUGGESTIONS: Is my current location safe? | Show me nearby tourist attractions | Where is the nearest hospital & police?]`;
+  }
+
   // Friendly Greeting
   const isGreeting = /^(hi|hello|hey|namaste|vanakkam|good\s*(morning|afternoon|evening)|howdy)\b/i.test(q);
   if (isGreeting && q.split(/\s+/).length <= 4) {
@@ -317,14 +349,24 @@ function generateSmartLocalFallback(query = '', context = {}) {
       `[SUGGESTIONS: Is this area safe to visit? | Where is the nearest hospital? | Plan a one-day trip for me]`;
   }
 
+  if (q.includes('capital') || q.includes('karnataka') || q.includes('india')) {
+    return `### 🏛️ Karnataka & Regional Information\n\n` +
+      `**Bengaluru** (Bangalore) is the capital of Karnataka, celebrated as the Silicon Valley of India and the Garden City.\n\n` +
+      `- **Official Language:** Kannada\n` +
+      `- **State Animal:** Asian Elephant | **State Bird:** Indian Roller\n` +
+      `- **Historical Highlights:** Belagavi, Hampi, Badami, Mysuru Palace, and the Western Ghats bio-reserve.\n\n` +
+      `How can I help you explore or travel safely across Karnataka today?\n\n` +
+      `[ACTIONS: OPEN_RADAR, OPEN_VOICE_BOARD]\n` +
+      `[SUGGESTIONS: Is my current location safe? | Show me nearby tourist attractions | Where is the nearest hospital & police?]`;
+  }
+
   return `### 🤖 Raksha Setu AI Tourist Assistant\n\n` +
-    `Hello! I am your 24/7 Smart Tourist Safety Assistant.\n\n` +
-    `I can help you with:\n` +
-    `- **Real-time Safety Assessment** of your current location.\n` +
-    `- **Finding Safe Havens:** Police stations, 24/7 hospitals, and pharmacies.\n` +
-    `- **Tourist Guidance:** Belagavi Fort, Gokak Falls, Hampi UNESCO site, Badami caves, and more.\n` +
-    `- **Emergency SOS:** Direct distress dispatch and 112 helpline.\n\n` +
-    `What would you like to explore or check?\n\n` +
+    `Hello! Regarding your query **"${query}"**:\n\n` +
+    `I am your 24/7 Smart Companion. I can assist you with real-time safety, local guidance, travel calculations, and emergency assistance.\n\n` +
+    `- **Live GPS Safety:** Check if your current sector is safe or cautioned.\n` +
+    `- **Safe Havens:** Locate the closest 24/7 hospitals, police posts, and pharmacies.\n` +
+    `- **Travel Guidance:** Explore top heritage sites, route directions, and safety advisories.\n\n` +
+    `Feel free to ask any travel, safety, or general questions!\n\n` +
     `[ACTIONS: OPEN_RADAR, OPEN_VOICE_BOARD]\n` +
     `[SUGGESTIONS: Is my current location safe? | Where is the nearest hospital & police? | Top attractions near me]`;
 }

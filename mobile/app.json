@@ -28,6 +28,8 @@
         "CALL_PHONE",
         "VIBRATE",
         "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "SEND_SMS",
         "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {

@@ -11,11 +11,13 @@ import {
   Alert,
   RefreshControl,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../theme/colors';
 import apiClient from '../../services/apiClient';
 import { API_ENDPOINTS } from '../../config/api';
+import geocodingService from '../../services/geocodingService';
 
 const travelModes = [
   { key: 'car', label: 'Car', icon: 'car-outline' },
@@ -47,6 +49,56 @@ export default function TripsScreen({ navigation }) {
   const [endDate, setEndDate] = useState(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
   const [additionalDestinations, setAdditionalDestinations] = useState([]);
   const [newStopText, setNewStopText] = useState('');
+
+  // Autocomplete search suggestions state
+  const [startSuggestions, setStartSuggestions] = useState([]);
+  const [destSuggestions, setDestSuggestions] = useState([]);
+  const [isSearchingStart, setIsSearchingStart] = useState(false);
+  const [isSearchingDest, setIsSearchingDest] = useState(false);
+
+  const handleStartTextChange = async (text) => {
+    setStartPoint(text);
+    if (!text || text.trim().length < 2) {
+      setStartSuggestions([]);
+      return;
+    }
+    try {
+      setIsSearchingStart(true);
+      const results = await geocodingService.searchPlaces(text);
+      setStartSuggestions(Array.isArray(results) ? results.slice(0, 5) : []);
+    } catch (_) {
+      setStartSuggestions([]);
+    } finally {
+      setIsSearchingStart(false);
+    }
+  };
+
+  const handleDestTextChange = async (text) => {
+    setDestination(text);
+    if (!text || text.trim().length < 2) {
+      setDestSuggestions([]);
+      return;
+    }
+    try {
+      setIsSearchingDest(true);
+      const results = await geocodingService.searchPlaces(text);
+      setDestSuggestions(Array.isArray(results) ? results.slice(0, 5) : []);
+    } catch (_) {
+      setDestSuggestions([]);
+    } finally {
+      setIsSearchingDest(false);
+    }
+  };
+
+  const selectStartPlace = (item) => {
+    setStartPoint(item.displayName || item.name);
+    setStartSuggestions([]);
+  };
+
+  const selectDestPlace = (item) => {
+    setDestination(item.displayName || item.name);
+    setDestSuggestions([]);
+  };
 
   const fetchTrips = useCallback(async () => {
     try {
@@ -370,36 +422,129 @@ export default function TripsScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Plan Trip Modal (Web Parity) */}
+      {/* Plan Trip Modal (Enhanced UI with Place Autocomplete & Keyboard Avoiding) */}
       <Modal visible={showAddModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Plan New Travel Route</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.text} />
+              <View>
+                <Text style={styles.modalTitle}>Plan New Travel Route</Text>
+                <Text style={styles.modalSubtitle}>Search destinations & register safety route</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setStartSuggestions([]);
+                  setDestSuggestions([]);
+                  setShowAddModal(false);
+                }}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color={Colors.text} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-              <Text style={styles.inputLabel}>Starting Location</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="e.g. Guwahati Hotel"
-                placeholderTextColor={Colors.textMuted}
-                value={startPoint}
-                onChangeText={setStartPoint}
-              />
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: 80 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Quick Destination Chips */}
+              <Text style={styles.quickChipsTitle}>⚡ Popular Destinations (Tap to select):</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickChipsScroll}>
+                {['Taj Mahal', 'India Gate', 'Calangute Beach Goa', 'Belagavi Fort', 'Hampi Heritage', 'Kaziranga'].map((place) => (
+                  <TouchableOpacity
+                    key={place}
+                    style={styles.quickChip}
+                    onPress={() => {
+                      setDestination(place);
+                      setDestSuggestions([]);
+                    }}
+                  >
+                    <Text style={styles.quickChipText}>📍 {place}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
+              {/* Starting Location with Live Autocomplete */}
+              <Text style={styles.inputLabel}>Starting Location (Origin)</Text>
+              <View style={styles.inputWithIconWrap}>
+                <Ionicons name="navigate-outline" size={18} color="#38bdf8" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={[styles.modalInput, styles.modalInputWithIcon]}
+                  placeholder="e.g. Guwahati Hotel, Belagavi Airport, etc."
+                  placeholderTextColor={Colors.textMuted}
+                  value={startPoint}
+                  onChangeText={handleStartTextChange}
+                />
+                {isSearchingStart && <ActivityIndicator size="small" color="#38bdf8" style={styles.inputTrailingSpinner} />}
+              </View>
+
+              {/* Starting Location Suggestions Dropdown */}
+              {startSuggestions.length > 0 && (
+                <View style={styles.suggestionsContainer}>
+                  {startSuggestions.map((item, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[
+                        styles.suggestionItem,
+                        idx === startSuggestions.length - 1 && styles.suggestionItemLast,
+                      ]}
+                      onPress={() => selectStartPlace(item)}
+                    >
+                      <Ionicons name="location" size={16} color="#38bdf8" style={{ marginRight: 8, marginTop: 2 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.suggestionTitle}>{item.name}</Text>
+                        <Text style={styles.suggestionSubtitle} numberOfLines={1}>
+                          {item.displayName || [item.city, item.state, 'India'].filter(Boolean).join(', ')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Main Destination with Live Autocomplete */}
               <Text style={styles.inputLabel}>Main Destination *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="e.g. Kaziranga National Park"
-                placeholderTextColor={Colors.textMuted}
-                value={destination}
-                onChangeText={setDestination}
-              />
+              <View style={styles.inputWithIconWrap}>
+                <Ionicons name="flag-outline" size={18} color="#ec4899" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={[styles.modalInput, styles.modalInputWithIcon]}
+                  placeholder="e.g. Kaziranga National Park, Taj Mahal..."
+                  placeholderTextColor={Colors.textMuted}
+                  value={destination}
+                  onChangeText={handleDestTextChange}
+                />
+                {isSearchingDest && <ActivityIndicator size="small" color="#ec4899" style={styles.inputTrailingSpinner} />}
+              </View>
 
+              {/* Main Destination Suggestions Dropdown */}
+              {destSuggestions.length > 0 && (
+                <View style={styles.suggestionsContainer}>
+                  {destSuggestions.map((item, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[
+                        styles.suggestionItem,
+                        idx === destSuggestions.length - 1 && styles.suggestionItemLast,
+                      ]}
+                      onPress={() => selectDestPlace(item)}
+                    >
+                      <Ionicons name="location" size={16} color="#ec4899" style={{ marginRight: 8, marginTop: 2 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.suggestionTitle}>{item.name}</Text>
+                        <Text style={styles.suggestionSubtitle} numberOfLines={1}>
+                          {item.displayName || [item.city, item.state, 'India'].filter(Boolean).join(', ')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Dates Row */}
               <View style={styles.dateRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.inputLabel}>Start Date (YYYY-MM-DD)</Text>
@@ -407,7 +552,7 @@ export default function TripsScreen({ navigation }) {
                     style={styles.modalInput}
                     value={startDate}
                     onChangeText={setStartDate}
-                    placeholder="2026-10-30"
+                    placeholder="2026-11-04"
                     placeholderTextColor={Colors.textMuted}
                   />
                 </View>
@@ -418,7 +563,7 @@ export default function TripsScreen({ navigation }) {
                     style={styles.modalInput}
                     value={endDate}
                     onChangeText={setEndDate}
-                    placeholder="2026-11-06"
+                    placeholder="2026-11-10"
                     placeholderTextColor={Colors.textMuted}
                   />
                 </View>
@@ -449,7 +594,7 @@ export default function TripsScreen({ navigation }) {
                 ))}
               </View>
 
-              <Text style={styles.inputLabel}>Additional Stops</Text>
+              <Text style={styles.inputLabel}>Additional Stops (Optional)</Text>
               <View style={styles.addStopRow}>
                 <TextInput
                   style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
@@ -495,12 +640,12 @@ export default function TripsScreen({ navigation }) {
                 {submitting ? (
                   <ActivityIndicator color={Colors.white} />
                 ) : (
-                  <Text style={styles.createTripBtnText}>Register Trip</Text>
+                  <Text style={styles.createTripBtnText}>Register Trip Route</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -865,5 +1010,86 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '800',
     fontSize: 14,
+  },
+  modalSubtitle: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  quickChipsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 2,
+  },
+  quickChipsScroll: {
+    marginBottom: 10,
+  },
+  quickChip: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginRight: 8,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#38bdf8',
+  },
+  inputWithIconWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputLeadingIcon: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 2,
+  },
+  inputTrailingSpinner: {
+    position: 'absolute',
+    right: 12,
+    zIndex: 2,
+  },
+  modalInputWithIcon: {
+    paddingLeft: 38,
+    paddingRight: 38,
+  },
+  suggestionsContainer: {
+    backgroundColor: '#0f172a',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  suggestionItemLast: {
+    borderBottomWidth: 0,
+  },
+  suggestionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  suggestionSubtitle: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
 });

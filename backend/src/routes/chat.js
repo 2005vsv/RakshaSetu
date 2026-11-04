@@ -399,7 +399,14 @@ router.get('/recorder', (_req, res) => {
         return;
       }
 
-      navigator.mediaDevices.getUserMedia({ audio: true })
+      function acquireMic() {
+        return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } })
+          .catch(function() {
+            return navigator.mediaDevices.getUserMedia({ audio: true });
+          });
+      }
+
+      acquireMic()
         .then(function(stream) {
           streamRef = stream;
           var options = {};
@@ -467,7 +474,7 @@ router.get('/recorder', (_req, res) => {
         })
         .catch(function(err) {
           console.error('Mic access error:', err);
-          document.getElementById('statusText').textContent = '⚠️ ' + (err.message || 'Microphone access denied');
+          document.getElementById('statusText').textContent = '⚠️ Mic unavailable. Please tap any question below or type your query!';
           if (window.ReactNativeWebView) {
             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', error: err.message }));
           }

@@ -255,13 +255,16 @@ export default function SosScreen({ navigation }) {
       setLastOfflineBeacon(beacon);
       emergencyService.getPendingOfflineCount().then(setPendingOfflineCount);
 
+      const contactName = user?.emergencyContacts?.[0]?.name || 'Emergency Contact';
+      const contactPhone = user?.emergencyContacts?.[0]?.phone || '';
+
       Alert.alert(
-        '📴 Offline Emergency SMS Mode',
-        `${reasonContext ? `${reasonContext}\n\n` : ''}An emergency distress SMS has been populated in your Messaging app with your exact GPS coordinates and Digital ID. Send the message to alert your emergency contacts and police control.\n\n📡 Control Room Sync: Your beacon is safely queued on this device and auto-syncs with the Police Control Room as soon as network is detected (or tap "Sync to Admin Console Now").`,
+        '📴 Offline Distress SMS Beacon Sent',
+        `${reasonContext ? `${reasonContext}\n\n` : ''}An emergency distress SMS has been composed directly to your contact ${contactName}${contactPhone ? ` (${contactPhone})` : ''} with your exact GPS Google Maps link and Digital ID.\n\n📡 Control Room Sync: Your beacon is safely recorded on this device and will automatically sync with the Police & Admin Control Room when network is detected.`,
         [
-          { text: 'OK, Messaging Opened', style: 'default' },
+          { text: 'OK', style: 'default' },
           {
-            text: 'Call 112 Helpline',
+            text: '📞 Call Police (112)',
             style: 'destructive',
             onPress: () => emergencyService.callEmergencyHelpline('112'),
           },

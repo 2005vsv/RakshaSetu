@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 
@@ -36,11 +37,21 @@ function DashboardStack() {
 }
 
 export default function AppTabs() {
+  const insets = useSafeAreaInsets();
+  const safeBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 14 : 8);
+  const barHeight = (Platform.OS === 'ios' ? 62 : 64) + safeBottom;
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: barHeight,
+            paddingBottom: safeBottom,
+          },
+        ],
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
@@ -130,7 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Platform.OS === 'ios' ? 14 : 18,
+    marginBottom: Platform.OS === 'ios' ? 8 : 10,
     shadowColor: Colors.danger,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,

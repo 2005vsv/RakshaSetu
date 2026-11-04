@@ -51,10 +51,15 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Server Config Gear Button */}
         <TouchableOpacity style={styles.gearButton} onPress={openServerConfig}>
           <Ionicons name="settings-outline" size={22} color={Colors.textSecondary} />
@@ -170,9 +175,9 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
-    justifyContent: 'center',
+    paddingTop: 50,
+    paddingBottom: 80,
+    justifyContent: 'flex-start',
   },
   gearButton: {
     position: 'absolute',
