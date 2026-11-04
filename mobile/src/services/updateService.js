@@ -5,8 +5,8 @@ import { API_ENDPOINTS } from '../config/api';
 import notificationService from './notificationService';
 
 // Current installed version in app
-export const CURRENT_APP_VERSION = '1.0.0';
-export const CURRENT_VERSION_CODE = 1;
+export const CURRENT_APP_VERSION = '1.0.1';
+export const CURRENT_VERSION_CODE = 2;
 
 const DISMISSED_UPDATE_KEY = '@rakshasetu_dismissed_update';
 
