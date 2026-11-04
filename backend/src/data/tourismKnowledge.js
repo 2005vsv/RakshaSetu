@@ -202,6 +202,193 @@ const TOURISM_DESTINATIONS = [
     nearestPoliceStation: "Badami Town Police Station (1.2 km)",
     nearestHospital: "Community Health Centre Badami (1.8 km)",
   },
+  {
+    id: "fort-aguada-goa",
+    name: "Fort Aguada & Calangute Beach",
+    region: "Goa (North Goa Coast)",
+    category: "Coastal Fortress & Beaches",
+    coordinates: { latitude: 15.4920, longitude: 73.7737 },
+    timings: "9:30 AM - 6:00 PM (Fort); Beaches open 24/7 (Lifeguards 7 AM - 6:30 PM)",
+    entryFee: "₹25 for Fort Aguada; Beaches Free",
+    safetyRating: "Safe (Lifeguards Active)",
+    familyFriendly: true,
+    bestTimeToVisit: "October to March (Pleasant sea breeze & water sports)",
+    summary:
+      "A 17th-century Portuguese fortress and lighthouse guarding the mouth of the Mandovi River. Below lie the world-famous golden sands of Calangute and Baga beaches, buzzing with water sports, beach shacks, and seafood.",
+    highlights: [
+      "17th-century Portuguese coastal fort and freshwater cistern",
+      "Four-story lighthouse overlooking panoramic Arabian Sea",
+      "Calangute and Baga beach water sports (parasailing, jet-ski)",
+      "Vibrant beach shacks and authentic Goan seafood"
+    ],
+    safetyTips: [
+      "Swim strictly between red-and-yellow flagged zones monitored by Drishti Marine lifeguards.",
+      "Never swim in the sea after sunset or under the influence of alcohol.",
+      "Wear ISI-certified helmets when riding rented scooters on coastal highways.",
+      "Coastal Police Helpline: 1093 | Police: 112 | Ambulance: 108"
+    ],
+    recommendedDuration: "Full day (4 to 8 hours)",
+    nearestPoliceStation: "Calangute Police Station (3.2 km)",
+    nearestHospital: "Candolim Primary Health Centre / Manipal Hospital Goa (6 km)",
+  },
+  {
+    id: "gateway-of-india-mumbai",
+    name: "Gateway of India & Marine Drive",
+    region: "Mumbai, Maharashtra",
+    category: "Heritage & Coastal Promenade",
+    coordinates: { latitude: 18.9220, longitude: 72.8347 },
+    timings: "Open 24/7 (Ferry rides 9:00 AM - 5:30 PM)",
+    entryFee: "Free",
+    safetyRating: "Extremely Safe (24/7 Police Patrol)",
+    familyFriendly: true,
+    bestTimeToVisit: "November to February",
+    summary:
+      "The iconic 26-meter basalt triumphal arch built in 1924 overlooking Mumbai harbour and the historic Taj Mahal Palace Hotel. Nearby stretches Marine Drive (The Queen's Necklace), a 3.6 km coastal boulevard.",
+    highlights: [
+      "Gateway of India basalt triumphal arch and harbor waterfront",
+      "Marine Drive (Queen's Necklace) sunset and nighttime promenade",
+      "Ferry boats to UNESCO Elephanta Caves",
+      "Historic Colaba Causeway shopping street and Irani cafes"
+    ],
+    safetyTips: [
+      "Avoid sitting on Marine Drive promenade tetrapods during high tide in monsoon season.",
+      "Use metered black-and-yellow taxis or ride-hailing apps (Uber/Ola).",
+      "Keep wallets and phones secured in bags while visiting crowded bazaars."
+    ],
+    recommendedDuration: "3 to 4 hours",
+    nearestPoliceStation: "Colaba Police Station (600m)",
+    nearestHospital: "St. George's Hospital / Bombay Hospital (2.5 km)",
+  },
+  {
+    id: "bangalore-palace-lalbagh",
+    name: "Bangalore Palace & Lalbagh Botanical Garden",
+    region: "Bengaluru, Karnataka",
+    category: "Royal Heritage & Nature",
+    coordinates: { latitude: 12.9988, longitude: 77.5921 },
+    timings: "10:00 AM - 5:30 PM (Palace); 6:00 AM - 7:00 PM (Lalbagh)",
+    entryFee: "₹250 (Palace); ₹30 (Lalbagh)",
+    safetyRating: "Safe (Green Zone)",
+    familyFriendly: true,
+    bestTimeToVisit: "Year-round (Pleasant Bengaluru weather)",
+    summary:
+      "Tudor-style royal estate inspired by Windsor Castle built by the Wadiyar dynasty in 1878, featuring turreted parapets and vintage royal memorabilia. Lalbagh houses a 19th-century glasshouse inspired by London's Crystal Palace.",
+    highlights: [
+      "Tudor-style woodcarvings, ballroom, and royal Durbar Hall",
+      "Lalbagh 19th-century Glass House and centuries-old botanical trees",
+      "Cubbon Park and grand Vidhana Soudha legislative assembly"
+    ],
+    safetyTips: [
+      "Use Namma Metro to bypass city road congestion.",
+      "Only drink bottled water from certified food stalls inside parks."
+    ],
+    recommendedDuration: "4 to 5 hours",
+    nearestPoliceStation: "Sadashivanagar Police Station (1.2 km)",
+    nearestHospital: "Mallige Hospital / Manipal Hospital (2 km)",
+  },
+  {
+    id: "mysore-palace",
+    name: "Mysore Palace (Amba Vilas)",
+    region: "Mysuru, Karnataka",
+    category: "Royal Heritage & Palaces",
+    coordinates: { latitude: 12.3051, longitude: 76.6551 },
+    timings: "10:00 AM - 5:30 PM (Illuminated 7:00 PM - 7:45 PM on Sundays & holidays)",
+    entryFee: "₹100 (Adults), ₹50 (Children)",
+    safetyRating: "Extremely Safe (Heavy Police & Security Presence)",
+    familyFriendly: true,
+    bestTimeToVisit: "September to March (Spectacular during Dasara in Oct)",
+    summary:
+      "The official residence of the Wadiyar dynasty and seat of the Kingdom of Mysore. Built in Indo-Saracenic style with dome spires, stained glass ceilings, ornate golden thrones, and 100,000 illumination bulbs.",
+    highlights: [
+      "Grand Durbar Hall, Kalyana Mantapa (Marriage Pavilion), and Golden Throne",
+      "100,000 incandescent light illumination spectacle on Sunday evenings",
+      "Chamundi Hills temple and Brindavan Gardens musical fountain nearby"
+    ],
+    safetyTips: [
+      "Footwear must be deposited at the free security token counter before entering palace halls.",
+      "Buy authentic GI Mysore Silk and Sandalwood only from Government KSIC and Cauvery emporiums."
+    ],
+    recommendedDuration: "2 to 3 hours",
+    nearestPoliceStation: "Devaraja Police Station (800m)",
+    nearestHospital: "K.R. Hospital Mysore (1.2 km)",
+  },
+  {
+    id: "taj-mahal-agra",
+    name: "The Taj Mahal & Agra Fort",
+    region: "Agra, Uttar Pradesh",
+    category: "World Wonder & Mughal Architecture",
+    coordinates: { latitude: 27.1751, longitude: 78.0421 },
+    timings: "Sunrise to Sunset (CLOSED ON FRIDAYS)",
+    entryFee: "₹50 (Indian citizens); ₹1100 (Foreign tourists)",
+    safetyRating: "Extremely Safe (CISF & Tourist Police Protection)",
+    familyFriendly: true,
+    bestTimeToVisit: "October to March",
+    summary:
+      "An immense mausoleum of white marble, built in Agra between 1631 and 1648 by order of the Mughal emperor Shah Jahan in memory of his favourite wife. One of the universally admired masterpieces of the world's heritage.",
+    highlights: [
+      "Ivory-white marble dome, minarets, and semi-precious stone Pietra Dura inlay",
+      "Reflecting lotus pool along Charbagh water canals",
+      "Agra Fort and Mehtab Bagh sunset viewpoint across the Yamuna River"
+    ],
+    safetyTips: [
+      "CLOSED on Fridays for general tourists.",
+      "Book tickets online via official ASI website (asi.payumoney.com) to avoid unauthorized touts."
+    ],
+    recommendedDuration: "3 to 4 hours",
+    nearestPoliceStation: "Tajganj Police Station (700m)",
+    nearestHospital: "District Hospital Agra (2.5 km)",
+  },
+  {
+    id: "hawa-mahal-amber-jaipur",
+    name: "Hawa Mahal & Amber Fort",
+    region: "Jaipur, Rajasthan",
+    category: "Royal Fortresses & Palaces",
+    coordinates: { latitude: 26.9239, longitude: 75.8267 },
+    timings: "9:00 AM - 5:00 PM",
+    entryFee: "₹50 (Indians); ₹200 (Foreigners) for Hawa Mahal",
+    safetyRating: "Safe (Tourist Police Present)",
+    familyFriendly: true,
+    bestTimeToVisit: "October to March (Pleasant desert breeze)",
+    summary:
+      "The 'Palace of Winds' with its honeycomb-shaped pink sandstone façade of 953 lattice windows. Combined with the majestic hilltop Amber Fort showcasing Sheesh Mahal (Mirror Palace) and Rajput regal grandeur.",
+    highlights: [
+      "953 ornate lattice jharokhas of Hawa Mahal designed for royal ladies",
+      "Amber Fort Sheesh Mahal (thousands of mirrored glass reflections)",
+      "City Palace, Jantar Mantar observatory, and Nahargarh sunset view"
+    ],
+    safetyTips: [
+      "Visit Amber Fort early in the morning to beat the afternoon heat.",
+      "Bargain politely in traditional Johari and Bapu Bazaars for textiles and pottery."
+    ],
+    recommendedDuration: "Full day (5 to 6 hours)",
+    nearestPoliceStation: "Manak Chowk Police Station (400m)",
+    nearestHospital: "SMS Hospital Jaipur (3 km)",
+  },
+  {
+    id: "alleppey-backwaters-kerala",
+    name: "Alleppey Backwaters & Munnar",
+    region: "Kerala (God's Own Country)",
+    category: "Backwaters & Hill Station",
+    coordinates: { latitude: 9.4981, longitude: 76.3388 },
+    timings: "Houseboat check-in 12:00 PM; Tea Gardens open 9:00 AM - 5:00 PM",
+    entryFee: "Houseboats ₹7,000 - ₹15,000/night; Tea gardens nominal entry",
+    safetyRating: "Safe (DTPC Certified)",
+    familyFriendly: true,
+    bestTimeToVisit: "September to March",
+    summary:
+      "Glide through serene palm-fringed lagoons, canals, and emerald paddy fields in a traditional wooden Kettuvallam houseboat. Head up to Munnar for rolling mist-clad tea plantations and fresh mountain air.",
+    highlights: [
+      "Overnight traditional houseboat cruise on Vembanad Lake canals",
+      "Munnar rolling carpet of tea estates and Mattupetty Dam",
+      "Authentic Kerala banana leaf Sadya feast and Ayurvedic massages"
+    ],
+    safetyTips: [
+      "Always wear life jackets while on smaller canoes or motorboats in backwaters.",
+      "Book houseboats with certified DTPC government green stickers for verified safety standards."
+    ],
+    recommendedDuration: "2 to 3 days",
+    nearestPoliceStation: "Alappuzha South Police Station (2 km)",
+    nearestHospital: "General Hospital Alappuzha (2.5 km)",
+  },
 ];
 
 const EMERGENCY_PROTOCOLS = {

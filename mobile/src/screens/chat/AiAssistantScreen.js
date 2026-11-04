@@ -25,9 +25,15 @@ import apiClient from '../../services/apiClient';
 import locationService from '../../services/locationService';
 import emergencyService from '../../services/emergencyService';
 import { API_ENDPOINTS, getDefaultBaseUrl } from '../../config/api';
+import { getSmartLocalResponse } from '../../services/aiChatService';
 
 const POPULAR_VOICE_QUERIES = [
   { label: '🛡️ Is my current location safe?', text: 'Is my current location safe?' },
+  { label: '🗺️ Distance between Belagavi and Goa', text: 'What is the distance between Belagavi and Goa?' },
+  { label: '🏖️ Famous places to visit in Goa', text: 'What are the famous places to visit in Goa?' },
+  { label: '🏙️ Famous places to visit in Mumbai', text: 'What are the famous places to visit in Mumbai?' },
+  { label: '🚗 Distance between Mumbai and Pune', text: 'What is the distance between Mumbai and Pune?' },
+  { label: '🍽️ Famous local foods to try', text: 'What are the famous foods and delicacies to try here?' },
   { label: '🚓 Nearest police station', text: 'Where is the nearest police station?' },
   { label: '🏥 Nearest hospital & doctor', text: 'Where is the nearest hospital and emergency clinic?' },
   { label: '💊 Nearest medical shop & pharmacy', text: 'Where is the nearest medical shop and pharmacy?' },
@@ -114,7 +120,7 @@ export default function AiAssistantScreen({ navigation }) {
     const unsubscribeBlur = navigation?.addListener ? navigation.addListener('blur', () => {
       Speech.stop();
       setSpeakingMsgId(null);
-    }) : () => {};
+    }) : () => { };
 
     return () => {
       Speech.stop();
@@ -150,7 +156,7 @@ export default function AiAssistantScreen({ navigation }) {
             lng = lLng;
             setCurrentCoords({ latitude: lLat, longitude: lLng });
           }
-        } catch (_) {}
+        } catch (_) { }
 
         const res = await apiClient.get(
           `${API_ENDPOINTS.CHAT_INITIAL_STATUS}?lat=${lat}&lng=${lng}&userId=${user?.id || ''}`
@@ -166,9 +172,9 @@ export default function AiAssistantScreen({ navigation }) {
               suggestedActions: ['OPEN_RADAR', 'OPEN_VOICE_BOARD'],
               suggestedQuestions: [
                 'Is my current location safe?',
+                'What is the distance between Belagavi and Goa?',
+                'What are famous places to visit in Goa?',
                 'Where is the nearest hospital, police & medical shop?',
-                'Where is the nearest medical shop?',
-                'Top attractions near me',
               ],
               timestamp: new Date(),
             },
@@ -181,13 +187,13 @@ export default function AiAssistantScreen({ navigation }) {
             {
               id: 'msg-init-fallback',
               role: 'assistant',
-              text: `👋 **Hello ${user?.name || 'Tourist'}!** Welcome to **Raksha AI**.\n\n🛡️ **Live Safety Telemetry:**\n• **Zone:** Verified Safe Green Corridor (✅ Safe)\n• **Nearest Police:** Udyambag Police Station\n• **Nearest Hospital:** Udyambag Multispeciality Hospital\n• **Nearest Medical Shop:** Sanjeevani Medical Stores\n\nHow can I help guide and protect you today?`,
+              text: `👋 **Hello ${user?.name || 'Tourist'}!** Welcome to **Raksha AI**.\n\n🛡️ **Live Safety Telemetry:**\n• **Zone:** Verified Safe Green Corridor (✅ Safe)\n• **Nearest Police:** Udyambag Police Station\n• **Nearest Hospital:** Udyambag Multispeciality Hospital\n• **Nearest Medical Shop:** Sanjeevani Medical Stores\n\nHow can I help guide and protect you today? Ask distance between any cities, places to visit, or safety advice!`,
               suggestedActions: ['OPEN_RADAR', 'OPEN_VOICE_BOARD'],
               suggestedQuestions: [
                 'Is my current location safe?',
-                'Where is the nearest police station?',
-                'Where is the nearest medical shop?',
-                'Tell me about Belagavi Fort',
+                'What is the distance between Belagavi and Goa?',
+                'What are famous places to visit in Goa?',
+                'Where is the nearest hospital & police?',
               ],
               timestamp: new Date(),
             },
@@ -234,11 +240,6 @@ export default function AiAssistantScreen({ navigation }) {
     setIsLoading(true);
 
     try {
-      const historyPayload = newHistory.slice(-5).map((m) => ({
-        role: m.role,
-        text: m.text,
-      }));
-
       // Ensure fresh GPS location fix is transmitted
       let activeCoords = currentCoords;
       try {
@@ -249,7 +250,29 @@ export default function AiAssistantScreen({ navigation }) {
           activeCoords = { latitude: fLat, longitude: fLng };
           setCurrentCoords(activeCoords);
         }
-      } catch (_) {}
+      } catch (_) { }
+
+      // 1. Instant Client-Side AI Response Check (Handles distance, Goa, Mumbai, Delhi, math, etc. instantly)
+      const instantAnswer = getSmartLocalResponse(textToSend, activeCoords);
+      if (instantAnswer) {
+        const assistantMsg = {
+          id: `ai-${Date.now()}`,
+          role: 'assistant',
+          text: instantAnswer.message,
+          suggestedActions: instantAnswer.suggestedActions || ['OPEN_RADAR', 'OPEN_VOICE_BOARD'],
+          suggestedQuestions: instantAnswer.suggestedQuestions || [],
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+        scrollToBottom();
+        setIsLoading(false);
+        return;
+      }
+
+      const historyPayload = newHistory.slice(-5).map((m) => ({
+        role: m.role,
+        text: m.text,
+      }));
 
       const response = await apiClient.post(API_ENDPOINTS.CHAT_ASSISTANT, {
         message: textToSend,
@@ -259,11 +282,22 @@ export default function AiAssistantScreen({ navigation }) {
       });
 
       if (response.data?.success) {
+        let msgText = response.data.message;
+
+        // Safety verification: If remote server returned stale Belagavi text for a different query
+        const qLower = textToSend.toLowerCase();
+        const mentionsOtherCity = /goa|mumbai|delhi|jaipur|kerala|agra|bengaluru|mysuru|pune|hyderabad/i.test(qLower);
+        const isDistance = qLower.includes('distance') || qLower.includes('how far');
+        if ((mentionsOtherCity || isDistance) && msgText && msgText.includes('Belagavi Fort') && !qLower.includes('belagavi')) {
+          const override = getSmartLocalResponse(textToSend, activeCoords);
+          if (override) msgText = override.message;
+        }
+
         const assistantMsg = {
           id: `ai-${Date.now()}`,
           role: 'assistant',
-          text: response.data.message,
-          suggestedActions: response.data.suggestedActions || [],
+          text: msgText,
+          suggestedActions: response.data.suggestedActions || ['OPEN_RADAR', 'OPEN_VOICE_BOARD'],
           suggestedQuestions: response.data.suggestedQuestions || [],
           timestamp: new Date(),
         };
@@ -279,6 +313,23 @@ export default function AiAssistantScreen({ navigation }) {
       }
     } catch (error) {
       console.warn('AI chat error:', error.message);
+      // Check if client-side AI can answer even on network error
+      const clientFallback = getSmartLocalResponse(textToSend, currentCoords);
+      if (clientFallback) {
+        const assistantMsg = {
+          id: `ai-${Date.now()}`,
+          role: 'assistant',
+          text: clientFallback.message,
+          suggestedActions: clientFallback.suggestedActions || ['OPEN_RADAR', 'OPEN_VOICE_BOARD'],
+          suggestedQuestions: clientFallback.suggestedQuestions || [],
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+        scrollToBottom();
+        setIsLoading(false);
+        return;
+      }
+
       const polText = telemetry?.nearestPolice || 'Udyambag Police Station';
       const hospText = telemetry?.nearestHospital || 'Udyambag Multispeciality Hospital';
       const pharmText = telemetry?.nearestPharmacy || 'Sanjeevani Medical Stores';
@@ -303,22 +354,27 @@ export default function AiAssistantScreen({ navigation }) {
     setIsTranscribing(true);
     setVoiceNotice('✨ Raksha AI is transcribing your speech...');
     try {
-      const res = await apiClient.post(API_ENDPOINTS.CHAT_TRANSCRIBE, {
+      const transcriptionPromise = apiClient.post(API_ENDPOINTS.CHAT_TRANSCRIBE, {
         audio: base64Audio,
         mimeType: mimeType || 'audio/webm',
       });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Transcription timed out')), 4000)
+      );
 
-      if (res.data?.success && res.data?.text) {
+      const res = await Promise.race([transcriptionPromise, timeoutPromise]);
+
+      if (res?.data?.success && res.data?.text) {
         const text = res.data.text.trim();
         setVoiceTranscribedText(text);
         setInputText(text);
         setVoiceNotice('✅ Voice question recognized:');
       } else {
-        setVoiceNotice('⚠️ No clear speech heard. Speak closer to the microphone, or select a question below:');
+        setVoiceNotice('⚠️ Tap microphone below to speak again, or tap a question below:');
       }
     } catch (err) {
       console.warn('Transcription API error:', err.message);
-      setVoiceNotice('⚠️ Voice transcription failed. You can choose a quick question below:');
+      setVoiceNotice('⚠️ Speak closer to microphone, or tap any popular question below:');
     } finally {
       setIsTranscribing(false);
     }
@@ -802,7 +858,7 @@ export default function AiAssistantScreen({ navigation }) {
                     if (req && typeof req.grant === 'function') {
                       req.grant(req.resources || []);
                     }
-                  } catch (_) {}
+                  } catch (_) { }
                 }}
                 onMessage={handleWebViewMessage}
                 scrollEnabled={false}

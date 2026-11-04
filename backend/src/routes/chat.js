@@ -76,6 +76,9 @@ router.get('/initial-status', optionalAuth, async (req, res) => {
       },
       quickChips: [
         '🛡️ Is my current location safe?',
+        '🗺️ Distance between Belagavi and Goa',
+        '🏖️ Famous places to visit in Goa',
+        '🏙️ Famous places to visit in Mumbai',
         '🏥 Nearest hospital, police & medical shop',
         '💊 Where is the nearest medical shop?',
         '🏛️ Top attractions near me',
@@ -149,28 +152,34 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ success: false, error: 'AI transcription key not configured' });
+    const isValidKey = Boolean(apiKey && (apiKey.startsWith('AIzaSy') || apiKey.length === 39));
+
+    if (!isValidKey) {
+      return res.json({
+        success: false,
+        error: 'Voice transcription requires a valid Google Gemini API key (starts with AIzaSy)',
+      });
     }
 
     // Clean base64 string if it contains data URI prefix
     const cleanBase64 = audio.includes(',') ? audio.split(',')[1] : audio;
 
     const candidateModels = [
-      'gemini-flash-latest',
-      'gemini-omni-flash-preview',
-      'gemini-omni-1.1-flash',
-      'gemini-3.8-flash',
-      'gemini-3.5-flash-lite',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash',
     ];
 
     let transcribedText = '';
     for (const model of candidateModels) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+
         const geminiRes = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             contents: [
               {
@@ -194,12 +203,12 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
           }),
         });
 
+        clearTimeout(timeoutId);
+
         const data = await geminiRes.json();
         if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
           transcribedText = data.candidates[0].content.parts[0].text.trim();
           break;
-        } else if (data?.error) {
-          console.warn(`Transcription model ${model} error:`, data.error.message || data.error);
         }
       } catch (err) {
         console.warn(`Transcription model ${model} network error:`, err.message);
@@ -514,12 +523,24 @@ router.get('/recorder', (_req, res) => {
     }
 
     function sendAudioToBackend(base64Audio, mimeType) {
+      var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timeoutId = setTimeout(function() {
+        if (controller) controller.abort();
+        if (!currentSpeechText) {
+          document.getElementById('statusText').textContent = '⚠️ Voice processing took too long. Select a query below or speak again.';
+        }
+      }, 3500);
+
       fetch('/chat/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller ? controller.signal : undefined,
         body: JSON.stringify({ audio: base64Audio, mimeType: mimeType })
       })
-      .then(function(res) { return res.json(); })
+      .then(function(res) {
+        clearTimeout(timeoutId);
+        return res.json();
+      })
       .then(function(data) {
         if (data.success && data.text) {
           document.getElementById('statusText').textContent = '✅ Spoken question recognized:';
@@ -532,12 +553,13 @@ router.get('/recorder', (_req, res) => {
             }));
           }
         } else if (!currentSpeechText) {
-          document.getElementById('statusText').textContent = '⚠️ No speech detected. Please speak closer.';
+          document.getElementById('statusText').textContent = '⚠️ Could not transcribe audio. Select a query below or speak again.';
         }
       })
       .catch(function(err) {
+        clearTimeout(timeoutId);
         if (!currentSpeechText) {
-          document.getElementById('statusText').textContent = '⚠️ Could not transcribe audio. Select a query below.';
+          document.getElementById('statusText').textContent = '⚠️ Select a popular query below or tap to speak again.';
         }
       });
     }

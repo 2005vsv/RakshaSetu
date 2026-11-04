@@ -111,30 +111,55 @@ async function buildTouristContext({ latitude, longitude, userId, query = '' }) 
   // 5. RAG Document Retrieval based on Query
   const qLower = query.toLowerCase();
 
-  // Search relevant tourist destinations
-  const matchedDestinations = TOURISM_DESTINATIONS.filter((dest) => {
-    const textToMatch = `${dest.name} ${dest.region} ${dest.category} ${dest.summary}`.toLowerCase();
-    const keywords = qLower.split(/\s+/).filter((w) => w.length > 2);
-    // If query mentions specific place
-    if (keywords.some((k) => textToMatch.includes(k))) return true;
-    // If general query asking about places or trip
-    if (
-      qLower.includes('tourist') ||
-      qLower.includes('places') ||
-      qLower.includes('visit') ||
-      qLower.includes('trip') ||
-      qLower.includes('attraction') ||
-      qLower.includes('famous') ||
-      qLower.includes('itinerary')
-    ) {
-      return true;
-    }
-    return false;
-  }).slice(0, 4);
+  const isPlacesQuery =
+    qLower.includes('tourist') ||
+    qLower.includes('places') ||
+    qLower.includes('visit') ||
+    qLower.includes('trip') ||
+    qLower.includes('attraction') ||
+    qLower.includes('famous') ||
+    qLower.includes('itinerary') ||
+    qLower.includes('sight') ||
+    qLower.includes('temple') ||
+    qLower.includes('beach') ||
+    qLower.includes('fort') ||
+    qLower.includes('falls');
 
-  // If none matched but destination requested, return top 3
-  const finalDestinations =
-    matchedDestinations.length > 0 ? matchedDestinations : TOURISM_DESTINATIONS.slice(0, 3);
+  // Search relevant tourist destinations only if query is about places/travel
+  let matchedDestinations = [];
+  if (isPlacesQuery) {
+    // 1. Check if user asked for a specific city / region
+    const knownRegions = [
+      'goa', 'mumbai', 'bengaluru', 'bangalore', 'mysuru', 'mysore', 'delhi',
+      'agra', 'jaipur', 'kerala', 'alleppey', 'munnar', 'hampi', 'badami',
+      'gokak', 'belagavi', 'belgaum', 'gokarna', 'coorg', 'chikmagalur',
+      'hyderabad', 'pune', 'chennai', 'kolkata', 'varanasi', 'manali', 'kashmir'
+    ];
+    const targetRegion = knownRegions.find((r) => qLower.includes(r));
+
+    if (targetRegion) {
+      matchedDestinations = TOURISM_DESTINATIONS.filter((dest) => {
+        const textToMatch = `${dest.name} ${dest.region}`.toLowerCase();
+        return textToMatch.includes(targetRegion);
+      }).slice(0, 4);
+    }
+
+    // 2. If no specific region named, but query is general (e.g. "famous places to visit near me" or "places to visit")
+    if (matchedDestinations.length === 0) {
+      const keywords = qLower.split(/\s+/).filter((w) => w.length > 2);
+      matchedDestinations = TOURISM_DESTINATIONS.filter((dest) => {
+        const textToMatch = `${dest.name} ${dest.region} ${dest.category} ${dest.summary}`.toLowerCase();
+        return keywords.some((k) => textToMatch.includes(k));
+      }).slice(0, 4);
+
+      // If user is asking about places nearby / around here, default to top local attractions
+      if (matchedDestinations.length === 0 && (qLower.includes('near') || qLower.includes('around') || qLower.includes('local') || qLower.includes('here'))) {
+        matchedDestinations = TOURISM_DESTINATIONS.slice(0, 3);
+      }
+    }
+  }
+
+  const finalDestinations = matchedDestinations;
 
   // Match emergency protocols
   let matchedProtocols = [];
@@ -291,14 +316,15 @@ RULES:
 1. Always base your response on the REAL live telemetry provided above (GPS location, nearest police station, nearest hospital, active geofence zone).
 2. NEVER give generic robot answers. Speak warmly, respectfully, clearly, and authoritatively.
 3. If the user asks about their safety or current location, check the GEOFENCE ZONE STATUS and tell them clearly whether they are safe, in caution, or restricted, and mention their nearest police station and hospital with exact distances.
-4. If the user asks for tourist attractions (Belagavi Fort, Hampi, Gokak Falls, etc.), share interesting historical insights, timings, entry fees, highlights, AND critical safety tips (e.g., slippery rocks at Gokak Falls, Tungabhadra river currents at Hampi, monkey precautions at Badami).
-5. If the user is in danger, lost, or having a medical emergency:
+4. If the user asks for tourist attractions, places to visit, or travel guides for ANY city or place (Goa, Mumbai, Delhi, Jaipur, Bengaluru, Mysuru, Kerala, Paris, Dubai, or local Belagavi/Hampi/Gokak), provide comprehensive, accurate, high-quality recommendations SPECIFICALLY for THAT city/region (top 4-6 must-visit spots, best season, food specialties, and safety tips). NEVER default to Belagavi if the user asked about another city!
+5. Distance and Routes: If the user asks for distance between any two places or cities (e.g. 'distance between Mumbai and Pune', 'how far is Goa from Belagavi'), provide exact driving road distance in km, driving duration by car/taxi, bus travel time, train/flight connectivity, recommended highway/expressway (e.g. NH-48, Mumbai-Pune Expressway, Yamuna Expressway), and travel safety advice.
+6. Universal Questions, General Knowledge & Calculations: You are a fully capable, intelligent assistant! If the user asks general knowledge questions (e.g. personalities, sports, science, world events, food, culture, history, geography, how-to, tech) or math calculations (e.g. travel budgeting sums, currency, 100+200), ALWAYS ANSWER THEM COMPLETELY, ACCURATELY, AND POLITELY. Never refuse to answer any user question!
+7. If the user is in danger, lost, or having a medical emergency:
    - Provide reassuring, immediate step-by-step instructions.
    - Mention Police Helpline 112 and Ambulance 108.
    - Mention the exact distance and name of their nearest hospital / police station from the telemetry above.
    - Advise them to use the 1-tap SOS trigger.
-6. General Knowledge & Mathematics: You are a fully capable, intelligent assistant! If the user asks general knowledge questions (e.g. 'who is Virat Kohli', sports, science, world events, culture, history) or math calculations (e.g. '100+200', travel budget sums), ALWAYS ANSWER THEM COMPLETELY, ACCURATELY, AND POLITELY. Never refuse to answer general questions or math!
-7. At the very end of your response, output two machine-readable blocks:
+8. At the very end of your response, output two machine-readable blocks:
    [ACTIONS: ACTION1, ACTION2]
    Where ACTION can be one or more of: TRIGGER_SOS, OPEN_RADAR, CALL_112, CALL_108, OPEN_VOICE_BOARD, VIEW_ZONES
    (Only include actions relevant to the current conversation).
