@@ -46,6 +46,7 @@ export const API_ENDPOINTS = {
   ALERTS: '/alerts',
   ANNOUNCEMENTS: '/announcements',
   SUPPORT: '/support',
+  UPDATES_CHECK: '/updates/check',
 
   // Trips
   TRIPS: '/trips',

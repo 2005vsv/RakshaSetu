@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 
 // Configure notification behavior when app is in foreground
 Notifications.setNotificationHandler({
@@ -61,6 +61,10 @@ class NotificationService {
       // Add response listener when user taps the notification
       Notifications.addNotificationResponseReceivedListener((response) => {
         const data = response?.notification?.request?.content?.data;
+        if (data?.action === 'APP_UPDATE') {
+          Linking.openURL(data.url || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.0/RakshaSetu.apk').catch(() => {});
+          return;
+        }
         if (data?.screen && this.navigationRef) {
           try {
             const screen = data.screen;

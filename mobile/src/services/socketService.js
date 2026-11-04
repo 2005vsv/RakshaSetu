@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { getStoredBaseUrl, getStoredToken } from './apiClient';
 import { notificationService } from './notificationService';
+import { updateService } from './updateService';
 
 class SocketService {
   constructor() {
@@ -107,6 +108,10 @@ class SocketService {
           body: req?.adminResponse ? `Admin reply: ${req.adminResponse}` : 'The administration has responded to your support request.',
           data: { screen: 'Support' },
         });
+      });
+
+      this.socket.on('app:update', (data) => {
+        updateService.handleRealtimeUpdateBroadcast(data);
       });
 
       this.socket.on('geofence:deactivated', (data) => {

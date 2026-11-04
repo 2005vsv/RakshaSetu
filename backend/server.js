@@ -110,6 +110,7 @@ const verifyRoutes = require("./src/routes/verify");
 const chatRoutes = require("./src/routes/chat");
 const anomaliesRoutes = require("./src/routes/anomalies");
 const policeRoutes = require("./src/routes/police");
+const updatesRoutes = require("./src/routes/updates");
 const authMiddleware = require("./src/middleware/auth");
 const Announcement = require("./src/models/Announcement");
 
@@ -127,6 +128,7 @@ app.use("/verify", verifyRoutes);
 app.use("/chat", chatRoutes);
 app.use("/anomalies", anomaliesRoutes);
 app.use("/police", policeRoutes);
+app.use("/updates", updatesRoutes);
 app.get("/announcements", authMiddleware, async (_req, res) => {
   try { res.json(await Announcement.find({ published: true }).sort({ createdAt: -1 }).limit(50).lean()); }
   catch { res.status(500).json({ error: "Could not load safety announcements" }); }

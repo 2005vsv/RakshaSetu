@@ -5,6 +5,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { AuthProvider } from './src/context/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import { notificationService } from './src/services/notificationService';
+import UpdateModal from './src/components/UpdateModal';
 
 export const navigationRef = createNavigationContainerRef();
 
@@ -31,6 +32,7 @@ export default function App() {
         <NavigationContainer ref={navigationRef}>
           <StatusBar style="light" />
           <RootNavigator />
+          <UpdateModal />
         </NavigationContainer>
       </AuthProvider>
     </SafeAreaProvider>

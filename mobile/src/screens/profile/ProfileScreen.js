@@ -18,6 +18,7 @@ import Colors from '../../theme/colors';
 import { getStoredBaseUrl, setStoredBaseUrl } from '../../services/apiClient';
 import { PUBLIC_TUNNEL_URL, USE_TUNNEL } from '../../config/api';
 import emergencyService from '../../services/emergencyService';
+import updateService, { CURRENT_APP_VERSION } from '../../services/updateService';
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateProfile } = useAuth();
@@ -43,6 +44,7 @@ export default function ProfileScreen({ navigation }) {
   const [contactPhone, setContactPhone] = useState('');
   const [contactRelation, setContactRelation] = useState('');
   const [serverUrl, setServerUrl] = useState(USE_TUNNEL && PUBLIC_TUNNEL_URL ? PUBLIC_TUNNEL_URL : '');
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     getStoredBaseUrl().then((url) => {
@@ -134,6 +136,23 @@ export default function ProfileScreen({ navigation }) {
   const handleSaveServerUrl = async () => {
     await setStoredBaseUrl(serverUrl);
     Alert.alert('Backend URL Saved', `Mobile app will now query: ${serverUrl}`);
+  };
+
+  const handleCheckUpdateManual = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await updateService.checkForUpdates(true);
+      if (!res.isAvailable) {
+        Alert.alert(
+          'Up to Date! 🎉',
+          `You are already using the latest version of RakshaSetu (v${CURRENT_APP_VERSION}).`
+        );
+      }
+    } catch (e) {
+      Alert.alert('Update Check', 'Could not reach update server. Check your internet connection.');
+    } finally {
+      setCheckingUpdate(false);
+    }
   };
 
   const handleLogout = () => {
@@ -343,6 +362,32 @@ export default function ProfileScreen({ navigation }) {
         </View>
         <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
       </TouchableOpacity>
+
+      {/* App Version & Updates */}
+      <Text style={styles.sectionTitle}>App & System Updates</Text>
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.contactName}>RakshaSetu App</Text>
+            <Text style={styles.contactPhone}>Installed Version: v{CURRENT_APP_VERSION}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.checkUpdateBtn}
+            onPress={handleCheckUpdateManual}
+            disabled={checkingUpdate}
+            activeOpacity={0.8}
+          >
+            {checkingUpdate ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="cloud-download-outline" size={14} color="#ffffff" style={{ marginRight: 4 }} />
+                <Text style={styles.checkUpdateBtnText}>Check Update</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Logout */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -614,5 +659,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  checkUpdateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  checkUpdateBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
