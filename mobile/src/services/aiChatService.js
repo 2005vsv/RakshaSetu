@@ -647,3 +647,4 @@ export function getSmartLocalResponse(query = '', coords = null) {
 
   return null;
 }
+

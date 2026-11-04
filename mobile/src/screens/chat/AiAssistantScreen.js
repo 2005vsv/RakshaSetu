@@ -27,6 +27,223 @@ import emergencyService from '../../services/emergencyService';
 import { API_ENDPOINTS, getDefaultBaseUrl } from '../../config/api';
 import { getSmartLocalResponse } from '../../services/aiChatService';
 
+const RECORDER_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Raksha Voice</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f172a;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 10px;
+      overflow: hidden;
+      user-select: none;
+    }
+    .mic-button {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      border: 3px solid #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(56, 189, 248, 0.45);
+      transition: all 0.2s ease;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mic-button.recording {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      border-color: #f87171;
+      box-shadow: 0 0 32px rgba(239, 68, 68, 0.75);
+      animation: pulse 1s infinite alternate;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.1); }
+    }
+    .mic-icon {
+      width: 36px;
+      height: 36px;
+      fill: #ffffff;
+    }
+    .status-text {
+      margin-top: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-align: center;
+      min-height: 18px;
+    }
+    .status-text.recording { color: #f87171; }
+    .transcript-box {
+      margin-top: 8px;
+      background: rgba(30, 41, 59, 0.85);
+      border: 1.5px solid #38bdf8;
+      border-radius: 12px;
+      padding: 8px 12px;
+      width: 100%;
+      max-width: 340px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      text-align: center;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div id="micBtn" class="mic-button" onclick="handleMicClick()">
+    <svg class="mic-icon" viewBox="0 0 24 24">
+      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+    </svg>
+  </div>
+
+  <div id="statusText" class="status-text">🎙️ Tap to Speak</div>
+
+  <div id="transcriptBox" class="transcript-box">
+    Tap the microphone and speak your question...
+  </div>
+
+  <script>
+    var isRecording = false;
+    var recognition = null;
+    var timer = null;
+    var seconds = 0;
+    var capturedText = '';
+    var streamRef = null;
+
+    var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    function postToRN(data) {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(data));
+      }
+    }
+
+    function handleMicClick() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      isRecording = true;
+      capturedText = '';
+      seconds = 0;
+
+      document.getElementById('micBtn').className = 'mic-button recording';
+      document.getElementById('statusText').className = 'status-text recording';
+      document.getElementById('statusText').textContent = '🔴 Listening... Speak now! (0s)';
+      document.getElementById('transcriptBox').textContent = 'Listening to your voice...';
+
+      postToRN({ type: 'RECORDING_STARTED' });
+
+      // 1. Web Speech API (Google Speech Services inside Android System WebView)
+      if (SpeechRec) {
+        try {
+          recognition = new SpeechRec();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-IN';
+
+          recognition.onresult = function(event) {
+            var fullTranscript = '';
+            for (var i = 0; i < event.results.length; ++i) {
+              fullTranscript += event.results[i][0].transcript + ' ';
+            }
+            fullTranscript = fullTranscript.trim();
+            if (fullTranscript) {
+              capturedText = fullTranscript;
+              document.getElementById('transcriptBox').textContent = '"' + fullTranscript + '"';
+              postToRN({ type: 'INTERIM_TEXT', text: fullTranscript });
+            }
+          };
+
+          recognition.onerror = function(e) {
+            console.warn('SpeechRec notice:', e.error);
+          };
+
+          recognition.start();
+        } catch (err) {
+          console.warn('SpeechRec start error:', err);
+        }
+      }
+
+      // 2. Microphone stream request to ensure hardware audio channel is open
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(function(stream) {
+            streamRef = stream;
+          })
+          .catch(function(err) {
+            console.warn('Mic audio permission:', err);
+          });
+      }
+
+      // Auto-stop after 8 seconds
+      timer = setInterval(function() {
+        seconds++;
+        document.getElementById('statusText').textContent = '🔴 Listening... Speak now! (' + seconds + 's)';
+        if (seconds >= 8) {
+          stopRecording();
+        }
+      }, 1000);
+    }
+
+    function stopRecording() {
+      if (!isRecording) return;
+      isRecording = false;
+
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+
+      document.getElementById('micBtn').className = 'mic-button';
+      document.getElementById('statusText').className = 'status-text';
+      document.getElementById('statusText').textContent = capturedText ? '✅ Spoken question recognized' : '🎙️ Tap to Speak Again';
+
+      if (recognition) {
+        try { recognition.stop(); } catch (_) {}
+      }
+
+      if (streamRef) {
+        try { streamRef.getTracks().forEach(function(t) { t.stop(); }); } catch (_) {}
+        streamRef = null;
+      }
+
+      if (capturedText && capturedText.trim()) {
+        postToRN({
+          type: 'TRANSCRIPTION_RESULT',
+          text: capturedText.trim()
+        });
+      } else {
+        postToRN({ type: 'NO_SPEECH_DETECTED' });
+        document.getElementById('transcriptBox').textContent = 'Could not hear clearly. Tap mic to retry or choose below:';
+      }
+    }
+  </script>
+</body>
+</html>`;
+
 const POPULAR_VOICE_QUERIES = [
   { label: '🛡️ Is my current location safe?', text: 'Is my current location safe?' },
   { label: '🗺️ Distance between Belagavi and Goa', text: 'What is the distance between Belagavi and Goa?' },
@@ -387,6 +604,8 @@ export default function AiAssistantScreen({ navigation }) {
         const text = data.text.trim();
         setVoiceTranscribedText(text);
         setInputText(text);
+        setIsRecordingVoice(false);
+        setIsTranscribing(false);
         setVoiceNotice('✅ Spoken question recognized:');
       } else if (data.type === 'INTERIM_TEXT' && data.text) {
         setVoiceTranscribedText(data.text);
@@ -394,6 +613,10 @@ export default function AiAssistantScreen({ navigation }) {
       } else if (data.type === 'RECORDING_STARTED') {
         setIsRecordingVoice(true);
         setVoiceNotice('🔴 Listening to your voice... Speak now!');
+      } else if (data.type === 'NO_SPEECH_DETECTED') {
+        setIsRecordingVoice(false);
+        setIsTranscribing(false);
+        setVoiceNotice('⚠️ Tap microphone below to speak again, or select a question:');
       } else if (data.type === 'AUDIO_DATA' && data.base64) {
         transcribeAudio(data.base64, data.mimeType || 'audio/webm');
       } else if (data.type === 'ERROR') {
@@ -845,7 +1068,7 @@ export default function AiAssistantScreen({ navigation }) {
             <View style={styles.recorderWidgetWrap}>
               <WebView
                 ref={voiceWebViewRef}
-                source={{ uri: `${getDefaultBaseUrl()}/chat/recorder` }}
+                source={{ html: RECORDER_HTML, baseUrl: 'https://localhost' }}
                 style={styles.recorderWebView}
                 originWhitelist={['*']}
                 javaScriptEnabled={true}
@@ -853,6 +1076,7 @@ export default function AiAssistantScreen({ navigation }) {
                 mediaPlaybackRequiresUserAction={false}
                 allowsInlineMediaPlayback={true}
                 mediaCapturePermissionGrantType="grant"
+                androidHardwareAccelerationDisabled={false}
                 onPermissionRequest={(req) => {
                   try {
                     if (req && typeof req.grant === 'function') {
