@@ -152,12 +152,12 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const isValidKey = Boolean(apiKey && (apiKey.startsWith('AIzaSy') || apiKey.length === 39));
+    const isValidKey = Boolean(apiKey && apiKey.trim().length > 15);
 
     if (!isValidKey) {
       return res.json({
         success: false,
-        error: 'Voice transcription requires a valid Google Gemini API key (starts with AIzaSy)',
+        error: 'Voice transcription requires a valid Google Gemini API key configured in .env',
       });
     }
 
@@ -165,8 +165,10 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
     const cleanBase64 = audio.includes(',') ? audio.split(',')[1] : audio;
 
     const candidateModels = [
-      'gemini-1.5-flash',
-      'gemini-2.0-flash',
+      'gemini-3.5-transcribe',
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
     ];
 
     let transcribedText = '';
@@ -174,7 +176,7 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
 
         const geminiRes = await fetch(url, {
           method: 'POST',
@@ -185,7 +187,7 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
               {
                 parts: [
                   {
-                    text: 'Listen to this tourist voice audio. Transcribe the exact words spoken into clear English text. Output ONLY the transcribed sentence or question. Do not add any conversational replies, notes, explanations, or quotes. If no speech is heard or it is silent, return: ""',
+                    text: 'Listen to this audio recorded by a tourist using a safety app. Transcribe the exact words spoken into clear English text. If spoken in Hindi, Kannada or another Indian language, translate and transcribe into clear English. Output ONLY the transcribed text. Do not add explanations, conversational answers, or punctuation marks like quotes. If the audio is silent or unintelligible, respond with: ""',
                   },
                   {
                     inlineData: {
@@ -205,13 +207,20 @@ router.post('/transcribe', optionalAuth, async (req, res) => {
 
         clearTimeout(timeoutId);
 
+        if (!geminiRes.ok) {
+          const errData = await geminiRes.json().catch(() => ({}));
+          console.warn(`[Transcription] Model ${model} HTTP ${geminiRes.status}:`, errData?.error?.message || geminiRes.statusText);
+          continue;
+        }
+
         const data = await geminiRes.json();
         if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
           transcribedText = data.candidates[0].content.parts[0].text.trim();
+          console.log(`[Transcription] Model ${model} success: "${transcribedText}"`);
           break;
         }
       } catch (err) {
-        console.warn(`Transcription model ${model} network error:`, err.message);
+        console.warn(`[Transcription] Model ${model} network error:`, err.message);
       }
     }
 

@@ -42,6 +42,36 @@ export const CITY_COORDINATES = {
   'jog falls': { name: 'Jog Falls', state: 'Karnataka', lat: 14.2285, lng: 74.8124 },
   'vijayapura': { name: 'Vijayapura (Bijapur)', state: 'Karnataka', lat: 16.8302, lng: 75.7100 },
   'bijapur': { name: 'Vijayapura (Bijapur)', state: 'Karnataka', lat: 16.8302, lng: 75.7100 },
+  'ballari': { name: 'Ballari (Bellary)', state: 'Karnataka', lat: 15.1394, lng: 76.9214 },
+  'bellary': { name: 'Ballari (Bellary)', state: 'Karnataka', lat: 15.1394, lng: 76.9214 },
+  'gangavathi': { name: 'Gangavathi', state: 'Karnataka', lat: 15.4325, lng: 76.5317 },
+  'gangavati': { name: 'Gangavathi', state: 'Karnataka', lat: 15.4325, lng: 76.5317 },
+  'koppal': { name: 'Koppal', state: 'Karnataka', lat: 15.3456, lng: 76.1555 },
+  'hosapete': { name: 'Hosapete (Hospet)', state: 'Karnataka', lat: 15.2689, lng: 76.3909 },
+  'hospet': { name: 'Hosapete (Hospet)', state: 'Karnataka', lat: 15.2689, lng: 76.3909 },
+  'raichur': { name: 'Raichur', state: 'Karnataka', lat: 16.2076, lng: 77.3463 },
+  'bagalkote': { name: 'Bagalkote', state: 'Karnataka', lat: 16.1817, lng: 75.6958 },
+  'bagalkot': { name: 'Bagalkote', state: 'Karnataka', lat: 16.1817, lng: 75.6958 },
+  'davanagere': { name: 'Davanagere', state: 'Karnataka', lat: 14.4644, lng: 75.9218 },
+  'tumakuru': { name: 'Tumakuru', state: 'Karnataka', lat: 13.3379, lng: 77.1010 },
+  'tumkur': { name: 'Tumakuru', state: 'Karnataka', lat: 13.3379, lng: 77.1010 },
+  'sirsi': { name: 'Sirsi', state: 'Karnataka', lat: 14.6195, lng: 74.8354 },
+  'jamkhandi': { name: 'Jamkhandi', state: 'Karnataka', lat: 16.5548, lng: 75.2341 },
+  'jhamkhandi': { name: 'Jamkhandi', state: 'Karnataka', lat: 16.5548, lng: 75.2341 },
+  'jamakhandi': { name: 'Jamkhandi', state: 'Karnataka', lat: 16.5548, lng: 75.2341 },
+  'mudhol': { name: 'Mudhol', state: 'Karnataka', lat: 16.3387, lng: 75.2831 },
+  'chikodi': { name: 'Chikodi', state: 'Karnataka', lat: 16.4316, lng: 74.5982 },
+  'athani': { name: 'Athani', state: 'Karnataka', lat: 16.7326, lng: 75.0594 },
+  'nipani': { name: 'Nipani', state: 'Karnataka', lat: 16.4022, lng: 74.3789 },
+  'sankeshwar': { name: 'Sankeshwar', state: 'Karnataka', lat: 16.2625, lng: 74.4828 },
+  'bailhongal': { name: 'Bailhongal', state: 'Karnataka', lat: 15.8167, lng: 74.8500 },
+  'saundatti': { name: 'Saundatti (Yellamma)', state: 'Karnataka', lat: 15.7667, lng: 75.1167 },
+  'ramdurg': { name: 'Ramdurg', state: 'Karnataka', lat: 15.9500, lng: 75.3000 },
+  'khanapur': { name: 'Khanapur', state: 'Karnataka', lat: 15.6333, lng: 74.5167 },
+  'kittur': { name: 'Kittur Fort', state: 'Karnataka', lat: 15.6025, lng: 74.7925 },
+  'hukkeri': { name: 'Hukkeri', state: 'Karnataka', lat: 16.2333, lng: 74.6000 },
+  'gadag': { name: 'Gadag', state: 'Karnataka', lat: 15.4167, lng: 75.6333 },
+  'haveri': { name: 'Haveri', state: 'Karnataka', lat: 14.8000, lng: 75.4000 },
 
   // Goa Hubs
   'goa': { name: 'Goa (Panaji)', state: 'Goa', lat: 15.4909, lng: 73.8278 },
@@ -105,6 +135,7 @@ const HIGHWAY_ROUTES = [
   { p1: 'belagavi', p2: 'kolhapur', highway: 'NH-48', notes: 'Direct high-speed corridor with toll plazas at Kognoli.' },
   { p1: 'belagavi', p2: 'gokak', highway: 'SH-31 (Belagavi-Bagalkote Road)', notes: 'Well-paved state highway passing through scenic agricultural belts.' },
   { p1: 'belagavi', p2: 'gokak falls', highway: 'SH-31 via Gokak Town', notes: 'Picturesque countryside drive.' },
+  { p1: 'belagavi', p2: 'jamkhandi', highway: 'SH-34 (via Gokak & Lokapur) or SH-18 (via Mudhol)', notes: 'Well-surfaced 2-lane state corridor through Yaragatti and Lokapur with fuel stops and roadside dhabas.' },
   { p1: 'belagavi', p2: 'hampi', highway: 'NH-48 to Hubballi -> NH-67 via Gadag & Hospet', notes: 'Historic heritage route.' },
   { p1: 'mumbai', p2: 'pune', highway: 'Mumbai-Pune Expressway (Yashwantrao Chavan Expressway)', notes: 'Access-controlled 6-lane toll expressway through the Khandala ghats.' },
   { p1: 'bengaluru', p2: 'mysuru', highway: 'Bengaluru-Mysuru Expressway (NH-275)', notes: '10-lane access-controlled greenfield expressway, cutting travel to just 90-120 mins.' },
@@ -294,7 +325,87 @@ function resolvePlace(query) {
   return null;
 }
 
-export function parseDistanceQuery(query = '', contextCoords = null) {
+/**
+ * Resolve place from dictionary or live geocode using OpenStreetMap Nominatim
+ */
+export async function resolvePlaceOrGeocode(query) {
+  if (!query || typeof query !== 'string') return null;
+  const clean = query.toLowerCase().trim().replace(/^(the|city\s+of|town\s+of)\s+/i, '');
+
+  const fromDict = resolvePlace(clean);
+  if (fromDict) return fromDict;
+
+  // Live Geocoding Fallback via OpenStreetMap Nominatim
+  try {
+    const cleanQuery = clean.replace(/[\?\.,!]/g, '').trim();
+    if (cleanQuery.length >= 2) {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&limit=1`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'RakshaSetu-TouristSafety/1.0',
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const items = await res.json();
+        if (Array.isArray(items) && items.length > 0) {
+          const first = items[0];
+          const namePart = first.display_name.split(',')[0].trim();
+          const statePart = first.display_name.split(',').slice(1, 3).join(',').trim();
+          const resolved = {
+            name: namePart || cleanQuery.toUpperCase(),
+            state: statePart || 'India',
+            lat: parseFloat(first.lat),
+            lng: parseFloat(first.lon),
+          };
+          CITY_COORDINATES[cleanQuery] = resolved;
+          return resolved;
+        }
+      }
+
+      // Try with phonetic normalization (e.g. jhamkhandi -> jamkhandi, etc.)
+      const normalizedQuery = cleanQuery.replace(/jh/gi, 'j').replace(/kh/gi, 'k');
+      if (normalizedQuery !== cleanQuery) {
+        const normFromDict = resolvePlace(normalizedQuery);
+        if (normFromDict) return normFromDict;
+
+        const normUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(normalizedQuery)}&limit=1`;
+        const resNorm = await fetch(normUrl, {
+          headers: { 'User-Agent': 'RakshaSetu-TouristSafety/1.0', Accept: 'application/json' },
+        }).catch(() => null);
+        if (resNorm && resNorm.ok) {
+          const itemsNorm = await resNorm.json();
+          if (Array.isArray(itemsNorm) && itemsNorm.length > 0) {
+            const first = itemsNorm[0];
+            const namePart = first.display_name.split(',')[0].trim();
+            const statePart = first.display_name.split(',').slice(1, 3).join(',').trim();
+            const resolved = {
+              name: namePart || normalizedQuery.toUpperCase(),
+              state: statePart || 'India',
+              lat: parseFloat(first.lat),
+              lng: parseFloat(first.lon),
+            };
+            CITY_COORDINATES[cleanQuery] = resolved;
+            return resolved;
+          }
+        }
+      }
+    }
+  } catch (_) {
+    // Network or timeout, fallback gracefully
+  }
+
+  return null;
+}
+
+export async function parseDistanceQuery(query = '', contextCoords = null) {
   const q = String(query || '').toLowerCase().trim();
   const isDistanceQuestion =
     q.includes('distance') ||
@@ -302,20 +413,35 @@ export function parseDistanceQuery(query = '', contextCoords = null) {
     q.includes('how many km') ||
     q.includes('how many kilometer') ||
     q.includes('how many kms') ||
+    q.includes('how much time to reach') ||
     q.includes('travel time between') ||
+    q.includes('driving time') ||
     q.includes('route between') ||
     q.includes('route from') ||
+    q.includes('reach from') ||
     q.includes('km between') ||
-    q.includes('kms between');
+    q.includes('kms between') ||
+    /\bto\b.*\b(distance|km|kms)\b/i.test(q) ||
+    /\b(distance|km|kms)\b.*\bto\b/i.test(q) ||
+    /^[a-z0-9\s\.\-]+\s+to\s+[a-z0-9\s\.\-]+(?:\s+distance|\s+km|\s+route)?$/i.test(q);
 
   if (!isDistanceQuestion) return null;
 
   let place1Name = null;
   let place2Name = null;
 
-  const betweenMatch = q.match(/(?:distance|time|km|kms|route)\s+(?:is\s+)?between\s+([a-z\s]+?)\s+(?:and|to|&)\s+([a-z\s\?\.]+)/i);
-  const fromToMatch = q.match(/(?:distance|time|how\s+far|route|reach)\s+(?:is\s+)?from\s+([a-z\s]+?)\s+to\s+([a-z\s\?\.]+)/i);
-  const howFarFromMatch = q.match(/how\s+far\s+(?:is\s+)?([a-z\s]+?)\s+from\s+([a-z\s\?\.]+)/i);
+  // Pattern 1: "between X and Y"
+  const betweenMatch = q.match(/(?:distance|time|km|kms|route)\s+(?:is\s+)?between\s+([a-z0-9\s\.\-]+?)\s+(?:and|to|&)\s+([a-z0-9\s\.\-\?]+)/i);
+  // Pattern 2: "from X to Y"
+  const fromToMatch = q.match(/(?:distance|time|how\s+far|route|reach)\s+(?:is\s+)?from\s+([a-z0-9\s\.\-]+?)\s+to\s+([a-z0-9\s\.\-\?]+)/i);
+  // Pattern 3: "how far is X from Y"
+  const howFarFromMatch = q.match(/how\s+far\s+(?:is\s+)?([a-z0-9\s\.\-]+?)\s+from\s+([a-z0-9\s\.\-\?]+)/i);
+  // Pattern 4: "X to Y distance" / "X to Y km" / "X to Y" (e.g. Belagavi to Goa distance)
+  const xToYMatch = q.match(/([a-z0-9\s\.\-]+?)\s+to\s+([a-z0-9\s\.\-]+?)(?:\s+(?:distance|km|kms|kilometer|route|travel\s*time))?$/i);
+  // Pattern 5: "distance of X from Y"
+  const distOfFromMatch = q.match(/distance\s+of\s+([a-z0-9\s\.\-]+?)\s+from\s+([a-z0-9\s\.\-\?]+)/i);
+  // Pattern 6: "distance X to Y"
+  const distDirectMatch = q.match(/(?:distance|route)\s+(?:is\s+)?([a-z0-9\s\.\-]+?)\s+to\s+([a-z0-9\s\.\-\?]+)/i);
 
   if (betweenMatch) {
     place1Name = betweenMatch[1].trim();
@@ -326,17 +452,36 @@ export function parseDistanceQuery(query = '', contextCoords = null) {
   } else if (howFarFromMatch) {
     place2Name = howFarFromMatch[1].trim();
     place1Name = howFarFromMatch[2].replace(/[\?\.]/g, '').trim();
+  } else if (xToYMatch) {
+    place1Name = xToYMatch[1].replace(/(?:what\s+is\s+the|tell\s+me\s+the|find|calculate|can\s+you\s+tell\s+me|show\s+me)\s+/gi, '').trim();
+    place2Name = xToYMatch[2].replace(/(?:distance|km|kms|kilometer|route|\?|\.)/gi, '').trim();
+  } else if (distOfFromMatch) {
+    place2Name = distOfFromMatch[1].trim();
+    place1Name = distOfFromMatch[2].replace(/[\?\.]/g, '').trim();
+  } else if (distDirectMatch) {
+    place1Name = distDirectMatch[1].trim();
+    place2Name = distDirectMatch[2].replace(/[\?\.]/g, '').trim();
   }
 
   if (!place1Name && !place2Name) {
-    const singleFarMatch = q.match(/how\s+far\s+is\s+([a-z\s]+)/i) || q.match(/distance\s+(?:to\s+)?([a-z\s]+)/i);
+    const singleFarMatch = q.match(/how\s+far\s+is\s+([a-z0-9\s\.\-]+)/i) || q.match(/distance\s+(?:to\s+)?([a-z0-9\s\.\-]+)/i);
     if (singleFarMatch) {
       place2Name = singleFarMatch[1].replace(/(from\s+here|from\s+me|from\s+my\s+location|\?)/gi, '').trim();
       place1Name = 'here';
     }
   }
 
-  const isHere = (name) => /here|me|my\s*location|current\s*location/i.test(name || '');
+  const cleanName = (str) =>
+    String(str || '')
+      .replace(/^(what\s+is\s+the|tell\s+me\s+the|find|calculate|can\s+you\s+tell\s+me|show\s+me|please)\s+/i, '')
+      .replace(/(?:distance|km|kms|route|and\s+also\s+route|and\s+also|and\s+route|and\s+the\s+route|\?|\.)/gi, ' ')
+      .replace(/\s+(?:and|also|with|for|give|show)\s*$/gi, '')
+      .trim();
+
+  if (place1Name) place1Name = cleanName(place1Name);
+  if (place2Name) place2Name = cleanName(place2Name);
+
+  const isHere = (name) => /\b(here|me|my\s*location|current\s*location|present\s*location)\b/i.test(String(name || '').trim());
 
   let p1Obj = null;
   let p2Obj = null;
@@ -347,40 +492,51 @@ export function parseDistanceQuery(query = '', contextCoords = null) {
   if (isHere(place1Name)) {
     p1Obj = { name: 'Your Current Location (Belagavi)', lat: curLat, lng: curLng };
   } else if (place1Name) {
-    p1Obj = resolvePlace(place1Name);
+    p1Obj = await resolvePlaceOrGeocode(place1Name);
   }
 
   if (isHere(place2Name)) {
     p2Obj = { name: 'Your Current Location (Belagavi)', lat: curLat, lng: curLng };
   } else if (place2Name) {
-    p2Obj = resolvePlace(place2Name);
+    p2Obj = await resolvePlaceOrGeocode(place2Name);
   }
 
-  if (!p1Obj && p2Obj) {
+  if (!p1Obj && !place1Name && p2Obj) {
     p1Obj = { name: 'Your Current Location (Belagavi)', lat: curLat, lng: curLng };
   } else if (p1Obj && !p2Obj) {
     const cleanRemainder = q.replace(place1Name || '', '').replace(/distance|between|and|from|to|how|far|is|\?/gi, '').trim();
-    p2Obj = resolvePlace(cleanRemainder);
+    if (cleanRemainder) {
+      p2Obj = await resolvePlaceOrGeocode(cleanRemainder);
+    }
   }
 
   // Fallback: check all pairs of cities in text
   if (!p1Obj || !p2Obj) {
     const found = [];
     for (const [k, v] of Object.entries(CITY_COORDINATES)) {
-      if (q.includes(k) && !found.some((f) => f.name === v.name)) {
+      const reg = new RegExp(`\\b${k}\\b`, 'i');
+      if (reg.test(q) && !found.some((f) => f.name === v.name)) {
         found.push(v);
       }
     }
     if (found.length >= 2) {
       p1Obj = found[0];
       p2Obj = found[1];
-    } else if (found.length === 1) {
+    } else if (found.length === 1 && !place1Name) {
       p1Obj = { name: 'Your Current Location (Belagavi)', lat: curLat, lng: curLng };
       p2Obj = found[0];
     }
   }
 
   if (!p1Obj || !p2Obj) return null;
+
+  // Prevent 0 km identical place self-distance
+  if (
+    p1Obj.name === p2Obj.name ||
+    (Math.abs(p1Obj.lat - p2Obj.lat) < 0.001 && Math.abs(p1Obj.lng - p2Obj.lng) < 0.001)
+  ) {
+    return null;
+  }
 
   return { origin: p1Obj, destination: p2Obj };
 }
@@ -525,11 +681,11 @@ export function generateDynamicTourismGuide(placeName) {
  * Universal Mobile AI Responder
  * Answers ANY query instantly on device if backend is un-updated or returns the old Belagavi fallback
  */
-export function getSmartLocalResponse(query = '', coords = null) {
+export async function getSmartLocalResponse(query = '', coords = null) {
   const q = String(query || '').toLowerCase().trim();
 
   // 1. Distance Calculation
-  const distParams = parseDistanceQuery(q, coords);
+  const distParams = await parseDistanceQuery(q, coords);
   if (distParams) {
     return {
       message: calculateDistanceReport(distParams.origin, distParams.destination),

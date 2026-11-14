@@ -12,11 +12,16 @@ import {
   Platform,
   Linking,
   Keyboard,
-  Modal,
   Animated,
-  PermissionsAndroid,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Speech from 'expo-speech';
 import Colors from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
@@ -25,50 +30,6 @@ import locationService from '../../services/locationService';
 import emergencyService from '../../services/emergencyService';
 import { API_ENDPOINTS, getDefaultBaseUrl } from '../../config/api';
 import { getSmartLocalResponse } from '../../services/aiChatService';
-
-// ⚡ Categorized Popular Voice Questions
-const POPULAR_VOICE_QUERIES = [
-  // 🗺️ Distance & Route Questions
-  { id: 'v1', category: 'distance', label: 'Belagavi to Goa distance', text: 'What is the distance between Belagavi and Goa?', icon: 'navigate-circle' },
-  { id: 'v2', category: 'distance', label: 'Mumbai to Pune distance', text: 'What is the distance between Mumbai and Pune?', icon: 'speedometer' },
-  { id: 'v3', category: 'distance', label: 'Bengaluru to Mysuru distance', text: 'What is the distance between Bengaluru and Mysuru?', icon: 'car-sport' },
-  { id: 'v4', category: 'distance', label: 'Delhi to Agra distance', text: 'What is the distance between Delhi and Agra?', icon: 'map' },
-
-  // 🏖️ Tourism & Famous Places
-  { id: 'v5', category: 'tourism', label: 'Famous places to visit in Goa', text: 'What are the famous places to visit in Goa?', icon: 'sunny' },
-  { id: 'v6', category: 'tourism', label: 'Famous places to visit in Mumbai', text: 'What are the famous places to visit in Mumbai?', icon: 'business' },
-  { id: 'v7', category: 'tourism', label: 'Famous places to visit in Bengaluru', text: 'What are famous places to visit in Bengaluru?', icon: 'flower' },
-  { id: 'v8', category: 'tourism', label: 'Famous places to visit in Jaipur', text: 'What are the famous places to visit in Jaipur pink city?', icon: 'color-palette' },
-  { id: 'v9', category: 'tourism', label: 'Famous places to visit in Kerala', text: 'What are the famous tourist places to visit in Kerala?', icon: 'boat' },
-  { id: 'v10', category: 'tourism', label: 'Famous places to visit in Agra', text: 'What are the famous places to visit in Agra?', icon: 'trail-sign' },
-  { id: 'v11', category: 'tourism', label: 'Belagavi Fort & Kamal Basti', text: 'Tell me about Belagavi Fort and Kamal Basti', icon: 'shield-checkmark' },
-  { id: 'v12', category: 'tourism', label: 'Gokak Falls & precautions', text: 'Tell me about Gokak Falls and what precautions to take', icon: 'water' },
-  { id: 'v13', category: 'tourism', label: 'Hampi UNESCO World Heritage', text: 'Tell me about Hampi UNESCO world heritage site and visitor timings', icon: 'ribbon' },
-  { id: 'v14', category: 'tourism', label: 'Plan safe 1-day tourist itinerary', text: 'Plan a safe one-day tourist trip for me in this area', icon: 'calendar' },
-
-  // 🛡️ Safety & Medical Havens
-  { id: 'v15', category: 'safety', label: 'Is my current location safe?', text: 'Is my current location safe?', icon: 'shield' },
-  { id: 'v16', category: 'safety', label: 'Nearest police station', text: 'Where is the nearest police station?', icon: 'shield-sharp' },
-  { id: 'v17', category: 'safety', label: 'Nearest hospital & doctor', text: 'Where is the nearest hospital and emergency clinic?', icon: 'medkit' },
-  { id: 'v18', category: 'safety', label: 'Nearest medical shop & pharmacy', text: 'Where is the nearest medical shop and pharmacy?', icon: 'bandage' },
-  { id: 'v19', category: 'safety', label: 'In danger! What should I do?', text: 'I am in danger! What should I do right now?', icon: 'alert-circle' },
-
-  // 🍽️ Local Food & Delicacies
-  { id: 'v20', category: 'food', label: 'Famous local foods to try', text: 'What are the famous foods and delicacies to try here?', icon: 'restaurant' },
-  { id: 'v21', category: 'food', label: 'Belagavi Kunda & famous sweets', text: 'What is Belagavi Kunda and where is the best place to try it?', icon: 'cafe' },
-];
-
-// ⚡ Instant Horizontal Quick Chips (always accessible right above chat input)
-const QUICK_CHIPS = [
-  { label: '🗺️ Belagavi to Goa', text: 'What is the distance between Belagavi and Goa?' },
-  { label: '🏖️ Places in Goa', text: 'What are famous places to visit in Goa?' },
-  { label: '🏙️ Places in Mumbai', text: 'What are famous places to visit in Mumbai?' },
-  { label: '🚗 Mumbai to Pune', text: 'What is the distance between Mumbai and Pune?' },
-  { label: '🛡️ Safe Zone?', text: 'Is my current location safe?' },
-  { label: '🏥 Nearest Hospital', text: 'Where is the nearest hospital and doctor?' },
-  { label: '🚓 Nearest Police', text: 'Where is the nearest police station?' },
-  { label: '🍽️ Famous Food', text: 'What are famous local foods and delicacies to try here?' },
-];
 
 export default function AiAssistantScreen({ navigation }) {
   const { user } = useAuth();
@@ -83,10 +44,10 @@ export default function AiAssistantScreen({ navigation }) {
   // ⌨️ Keyboard Visibility & Offset Tracking
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // 🎙️ Voice Search & Voice Typing State
-  const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
-  const [isVoiceTypingHintActive, setIsVoiceTypingHintActive] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  // 🎙️ Native Voice Recording with modern Expo Audio (Expo Go SDK 58 compatible)
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   const scrollViewRef = useRef(null);
   const textInputRef = useRef(null);
@@ -117,7 +78,7 @@ export default function AiAssistantScreen({ navigation }) {
 
   // Microphone Pulse Animation
   useEffect(() => {
-    if (isVoiceModalVisible) {
+    if (isListening) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -135,20 +96,27 @@ export default function AiAssistantScreen({ navigation }) {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [isVoiceModalVisible]);
+  }, [isListening]);
 
-  // Clean up speech on unmount or screen blur (switching tabs)
+  // Clean up speech and audio recording on unmount or screen blur (switching tabs)
   useEffect(() => {
     const unsubscribeBlur = navigation?.addListener ? navigation.addListener('blur', () => {
       Speech.stop();
       setSpeakingMsgId(null);
+      if (audioRecorder.isRecording) {
+        try { audioRecorder.stop(); } catch (_) {}
+        setIsListening(false);
+      }
     }) : () => { };
 
     return () => {
       Speech.stop();
+      if (audioRecorder.isRecording) {
+        try { audioRecorder.stop(); } catch (_) {}
+      }
       if (typeof unsubscribeBlur === 'function') unsubscribeBlur();
     };
-  }, [navigation]);
+  }, [navigation, audioRecorder]);
 
   // Initialize: get location & fetch initial status greeting
   useEffect(() => {
@@ -246,6 +214,11 @@ export default function AiAssistantScreen({ navigation }) {
     const textToSend = (customText || inputText || '').trim();
     if (!textToSend || isLoading) return;
 
+    if (audioRecorder.isRecording) {
+      try { audioRecorder.stop(); } catch (_) {}
+      setIsListening(false);
+    }
+
     setInputText('');
     Keyboard.dismiss();
 
@@ -275,7 +248,7 @@ export default function AiAssistantScreen({ navigation }) {
       } catch (_) { }
 
       // 1. Instant Client-Side AI Response Check (Handles distance, Goa, Mumbai, Delhi, math, etc. instantly)
-      const instantAnswer = getSmartLocalResponse(textToSend, activeCoords);
+      const instantAnswer = await getSmartLocalResponse(textToSend, activeCoords);
       if (instantAnswer) {
         const assistantMsg = {
           id: `ai-${Date.now()}`,
@@ -309,9 +282,9 @@ export default function AiAssistantScreen({ navigation }) {
         // Safety verification: If remote server returned stale Belagavi text for a different query
         const qLower = textToSend.toLowerCase();
         const mentionsOtherCity = /goa|mumbai|delhi|jaipur|kerala|agra|bengaluru|mysuru|pune|hyderabad/i.test(qLower);
-        const isDistance = qLower.includes('distance') || qLower.includes('how far');
+        const isDistance = qLower.includes('distance') || qLower.includes('how far') || /\bto\b.*\b(km|distance)\b/i.test(qLower);
         if ((mentionsOtherCity || isDistance) && msgText && msgText.includes('Belagavi Fort') && !qLower.includes('belagavi')) {
-          const override = getSmartLocalResponse(textToSend, activeCoords);
+          const override = await getSmartLocalResponse(textToSend, activeCoords);
           if (override) msgText = override.message;
         }
 
@@ -336,7 +309,7 @@ export default function AiAssistantScreen({ navigation }) {
     } catch (error) {
       console.warn('AI chat error:', error.message);
       // Check if client-side AI can answer even on network error
-      const clientFallback = getSmartLocalResponse(textToSend, currentCoords);
+      const clientFallback = await getSmartLocalResponse(textToSend, currentCoords);
       if (clientFallback) {
         const assistantMsg = {
           id: `ai-${Date.now()}`,
@@ -371,41 +344,109 @@ export default function AiAssistantScreen({ navigation }) {
     }
   };
 
-  // 🎙️ Voice Assistant Handlers
-  const openVoiceModal = () => {
-    Keyboard.dismiss();
-    Speech.stop();
-    setIsVoiceModalVisible(true);
-  };
+  // 🎙️ Native Voice Recording (expo-audio) -> Backend Gemini 3.5 Transcribe -> Input Box
+  const toggleVoiceRecording = async () => {
+    if (isTranscribing) return;
 
-  const closeVoiceModal = () => {
-    Speech.stop();
-    setIsVoiceModalVisible(false);
-  };
+    if (isListening || audioRecorder.isRecording) {
+      // User tapped Stop / Done
+      setIsListening(false);
+      setIsTranscribing(true);
 
-  const activateVoiceTyping = () => {
-    Speech.stop();
-    setIsVoiceModalVisible(false);
-    setIsVoiceTypingHintActive(true);
-    setTimeout(() => {
-      textInputRef.current?.focus();
-    }, 180);
-  };
+      try {
+        await audioRecorder.stop();
+        // Allow native container encoder 250ms to finish flushing .m4a to storage
+        await new Promise((resolve) => setTimeout(resolve, 250));
 
-  const handleSelectVoiceQuery = (queryText) => {
-    Speech.stop();
-    setIsVoiceModalVisible(false);
-    setIsVoiceTypingHintActive(false);
-    // Speak query aloud so tourist hears question confirmation
-    Speech.speak(queryText, { language: 'en-IN', rate: 1.0 });
-    handleSendMessage(queryText);
-  };
+        const uri = audioRecorder.uri;
+        if (!uri) {
+          setIsTranscribing(false);
+          Alert.alert('Voice Note', 'No audio recorded. Please speak after tapping the microphone.');
+          return;
+        }
 
-  const handleQuickVoiceChip = (chipText) => {
-    Speech.stop();
-    setIsVoiceTypingHintActive(false);
-    Speech.speak(chipText, { language: 'en-IN', rate: 1.0 });
-    handleSendMessage(chipText);
+        let base64Audio = '';
+        try {
+          if (FileSystem && typeof FileSystem.readAsStringAsync === 'function') {
+            base64Audio = await FileSystem.readAsStringAsync(uri, {
+              encoding: FileSystem.EncodingType?.Base64 || 'base64',
+            });
+          }
+        } catch (readErr) {
+          console.warn('FileSystem.readAsStringAsync note:', readErr.message);
+        }
+
+        // Resilient universal fallback: read via Blob + FileReader
+        if (!base64Audio) {
+          try {
+            const resp = await fetch(uri);
+            const blob = await resp.blob();
+            base64Audio = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const res = reader.result;
+                resolve(typeof res === 'string' && res.includes(',') ? res.split(',')[1] : res);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (blobErr) {
+            console.warn('Blob FileReader error:', blobErr.message);
+          }
+        }
+
+        if (!base64Audio || base64Audio.length < 50) {
+          setIsTranscribing(false);
+          Alert.alert('Voice Note', 'Voice recording was too short. Please speak clearly and tap Done.');
+          return;
+        }
+
+        const res = await apiClient.post(API_ENDPOINTS.CHAT_TRANSCRIBE, {
+          audio: base64Audio,
+          mimeType: 'audio/m4a',
+        });
+
+        if (res.data?.success && res.data.text) {
+          const transcribed = res.data.text.trim();
+          if (transcribed) {
+            setInputText((prev) => (prev ? `${prev.trim()} ${transcribed}` : transcribed));
+            textInputRef.current?.focus();
+          }
+        } else if (res.data?.error) {
+          Alert.alert('Voice Note', res.data.error);
+        } else {
+          Alert.alert('Voice Note', 'Could not detect clear speech. Please speak closer to the microphone and try again.');
+        }
+      } catch (err) {
+        console.warn('Voice transcription error:', err.message, err.response?.data);
+        const errDetail = err.response?.data?.error || err.message || 'Please check connection and try speaking again.';
+        Alert.alert('Voice Note', `Could not convert audio: ${errDetail}`);
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
+
+    // Start recording
+    try {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Microphone Permission', 'Please allow microphone access to convert voice to text.');
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setIsListening(true);
+    } catch (err) {
+      console.warn('Start recording error:', err.message);
+      Alert.alert('Microphone Error', 'Unable to start voice recording. Please check microphone permissions.');
+    }
   };
 
   // Action Button Handler
@@ -663,23 +704,6 @@ export default function AiAssistantScreen({ navigation }) {
                         })}
                       </View>
                     )}
-
-                    {/* Suggested Follow-up Questions */}
-                    {!isUser && item.suggestedQuestions && item.suggestedQuestions.length > 0 && (
-                      <View style={styles.suggestionsWrap}>
-                        <Text style={styles.suggestionsTitle}>💡 Suggested follow-ups:</Text>
-                        {item.suggestedQuestions.map((sug, idx) => (
-                          <TouchableOpacity
-                            key={idx}
-                            style={styles.suggestionChip}
-                            onPress={() => handleSendMessage(sug)}
-                          >
-                            <Ionicons name="chatbubble-ellipses-outline" size={14} color="#38bdf8" />
-                            <Text style={styles.suggestionChipText}>{sug}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
                   </View>
                 </View>
               );
@@ -699,68 +723,64 @@ export default function AiAssistantScreen({ navigation }) {
           )}
         </ScrollView>
 
-        {/* 🎙️ Voice Typing Instruction Banner */}
-        {isVoiceTypingHintActive && (
-          <View style={styles.voiceActiveBanner}>
-            <View style={styles.voiceActiveLeft}>
-              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                <Ionicons name="mic" size={20} color="#38bdf8" />
-              </Animated.View>
-              <Text style={styles.voiceActiveBannerText}>
-                🎙️ <Text style={{ fontWeight: '800', color: '#38bdf8' }}>Voice Typing Ready:</Text> Tap the <Text style={{ fontWeight: '800', color: '#38bdf8' }}>mic icon</Text> on your phone keyboard to speak!
-              </Text>
+        {/* 🎙️ Real-Time Voice Recording / Transcribing Banner */}
+        {isListening && (
+          <View style={styles.inlineListeningBar}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Animated.View style={[styles.inlineRedDot, { transform: [{ scale: pulseAnim }] }]} />
+              <Text style={styles.inlineListeningText}>🎙️ Recording your voice... Speak now!</Text>
             </View>
-            <TouchableOpacity onPress={() => setIsVoiceTypingHintActive(false)} style={styles.closeBannerBtn}>
-              <Ionicons name="close-circle" size={20} color="#94a3b8" />
+            <TouchableOpacity onPress={toggleVoiceRecording} style={styles.inlineStopBtn}>
+              <Ionicons name="stop-circle" size={16} color="#ef4444" />
+              <Text style={styles.inlineStopText}>Done</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* ⚡ Instant Quick Voice Query Chips */}
-        <View style={styles.quickVoiceBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickVoiceContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {QUICK_CHIPS.map((chip, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.quickChipBtn}
-                onPress={() => handleQuickVoiceChip(chip.text)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="mic" size={13} color="#38bdf8" />
-                <Text style={styles.quickChipText}>{chip.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        {isTranscribing && (
+          <View style={styles.inlineListeningBar}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color="#38bdf8" />
+              <Text style={styles.inlineListeningText}>⏳ Converting voice to text...</Text>
+            </View>
+          </View>
+        )}
 
         {/* ✍️ Message Input Box & 🎙️ Voice Assistant Button */}
         <View style={styles.inputContainer}>
-          {/* 🎙️ Voice Assistant Button */}
+          {/* 🎙️ Voice Assistant Button (Native Audio Recording -> Input Box) */}
           <TouchableOpacity
-            style={styles.micBtn}
-            onPress={openVoiceModal}
+            style={[styles.micBtn, isListening && styles.micBtnListening]}
+            onPress={toggleVoiceRecording}
             activeOpacity={0.8}
-            accessibilityLabel="Voice Assistant"
+            disabled={isTranscribing}
+            accessibilityLabel={isListening ? 'Stop Voice Recording' : 'Start Voice Input'}
           >
-            <Ionicons name="mic" size={22} color="#38bdf8" />
+            {isTranscribing ? (
+              <ActivityIndicator size="small" color="#38bdf8" />
+            ) : isListening ? (
+              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                <Ionicons name="mic" size={22} color="#ffffff" />
+              </Animated.View>
+            ) : (
+              <Ionicons name="mic" size={22} color="#38bdf8" />
+            )}
           </TouchableOpacity>
 
           {/* Text Input */}
           <TextInput
             ref={textInputRef}
             style={styles.input}
-            placeholder="Type or tap 🎙️ for voice queries..."
+            placeholder={
+              isListening
+                ? '🎙️ Recording voice... Speak clearly'
+                : isTranscribing
+                ? '⏳ Converting voice to text...'
+                : 'Ask distance, places, safety...'
+            }
             placeholderTextColor={Colors.textSecondary}
             value={inputText}
-            onChangeText={(t) => {
-              setInputText(t);
-              if (t.trim().length > 0) setIsVoiceTypingHintActive(false);
-            }}
+            onChangeText={(t) => setInputText(t)}
             multiline
             maxLength={500}
             onFocus={() => {
@@ -774,10 +794,10 @@ export default function AiAssistantScreen({ navigation }) {
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              (!inputText.trim() || isLoading) && styles.sendBtnDisabled,
+              (!inputText.trim() || isLoading || isTranscribing) && styles.sendBtnDisabled,
             ]}
             onPress={() => handleSendMessage()}
-            disabled={!inputText.trim() || isLoading}
+            disabled={!inputText.trim() || isLoading || isTranscribing}
           >
             {isLoading ? (
               <ActivityIndicator size="small" color={Colors.white} />
@@ -787,120 +807,6 @@ export default function AiAssistantScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-
-      {/* 🎙️ Voice Assistant Modal Sheet */}
-      <Modal
-        visible={isVoiceModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={closeVoiceModal}
-      >
-        <View style={styles.voiceModalOverlay}>
-          <View style={styles.voiceModalCard}>
-            {/* Modal Header */}
-            <View style={styles.voiceModalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                  <Ionicons name="mic-circle" size={32} color="#38bdf8" />
-                </Animated.View>
-                <View>
-                  <Text style={styles.voiceModalTitle}>Raksha Voice Assistant</Text>
-                  <Text style={styles.voiceModalSub}>Speak or pick an instant question</Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={closeVoiceModal} style={styles.voiceCloseBtn}>
-                <Ionicons name="close" size={22} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 🎙️ Hero Voice Typing Button (Uses Native Phone Microphone) */}
-            <TouchableOpacity
-              style={styles.heroVoiceCard}
-              onPress={activateVoiceTyping}
-              activeOpacity={0.85}
-            >
-              <Animated.View style={[styles.heroMicCircle, { transform: [{ scale: pulseAnim }] }]}>
-                <Ionicons name="mic" size={34} color="#ffffff" />
-              </Animated.View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroVoiceTitle}>🎙️ Tap to Speak (Voice Typing)</Text>
-                <Text style={styles.heroVoiceDesc}>
-                  Speak into phone keyboard mic with Google / Android voice recognition
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#38bdf8" />
-            </TouchableOpacity>
-
-            {/* 🏷️ Category Filter Pills */}
-            <View style={styles.categoryPillsRow}>
-              {[
-                { key: 'all', label: '⚡ All' },
-                { key: 'distance', label: '🗺️ Distance' },
-                { key: 'tourism', label: '🏖️ Tourism' },
-                { key: 'safety', label: '🛡️ Safety' },
-                { key: 'food', label: '🍽️ Food' },
-              ].map((cat) => (
-                <TouchableOpacity
-                  key={cat.key}
-                  style={[
-                    styles.categoryPill,
-                    selectedCategory === cat.key && styles.categoryPillActive,
-                  ]}
-                  onPress={() => setSelectedCategory(cat.key)}
-                >
-                  <Text
-                    style={[
-                      styles.categoryPillText,
-                      selectedCategory === cat.key && styles.categoryPillTextActive,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* 📜 Filtered Voice Questions Scrollable List */}
-            <ScrollView
-              style={styles.voiceQueryList}
-              showsVerticalScrollIndicator={true}
-              contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
-            >
-              {POPULAR_VOICE_QUERIES
-                .filter((q) => selectedCategory === 'all' || q.category === selectedCategory)
-                .map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.voiceQueryRow}
-                    onPress={() => handleSelectVoiceQuery(item.text)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.voiceQueryIconWrap}>
-                      <Ionicons name={item.icon || 'chatbubble-ellipses-outline'} size={18} color="#38bdf8" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.voiceQueryRowTitle}>{item.label}</Text>
-                      <Text style={styles.voiceQueryRowSub} numberOfLines={1}>{item.text}</Text>
-                    </View>
-                    <View style={styles.voiceQueryAskBtn}>
-                      <Text style={styles.voiceQueryAskText}>Ask</Text>
-                      <Ionicons name="arrow-forward" size={12} color="#38bdf8" />
-                    </View>
-                  </TouchableOpacity>
-                ))}
-            </ScrollView>
-
-            {/* 💡 Helpful Tip Footer */}
-            <View style={styles.voiceGuideFooter}>
-              <Ionicons name="bulb-outline" size={16} color="#f59e0b" />
-              <Text style={styles.voiceGuideFooterText}>
-                <Text style={{ fontWeight: '700', color: '#f59e0b' }}>Tip: </Text>
-                Tap the big button above, then tap the 🎙️ mic on your keyboard to speak freely in any language!
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1226,6 +1132,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  micBtnListening: {
+    backgroundColor: '#ef4444',
+    borderColor: '#f87171',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 8,
+  },
   input: {
     flex: 1,
     minHeight: 44,
@@ -1251,241 +1166,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
     opacity: 0.5,
   },
-
-  // 🎙️ Voice Typing Hint & Quick Query Bar Styles
-  voiceActiveBanner: {
+  inlineListeningBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#0c2238',
+    backgroundColor: '#1e1b4b',
     borderTopWidth: 1.5,
     borderBottomWidth: 1.5,
-    borderColor: '#38bdf8',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  voiceActiveLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  voiceActiveBannerText: {
-    fontSize: 13,
-    color: '#e2e8f0',
-    flex: 1,
-    lineHeight: 18,
-  },
-  closeBannerBtn: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  quickVoiceBar: {
-    backgroundColor: '#0b1120',
-    borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderColor: '#ef4444',
     paddingVertical: 8,
-  },
-  quickVoiceContent: {
     paddingHorizontal: 14,
-    gap: 8,
-    alignItems: 'center',
   },
-  quickChipBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1e293b',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
+  inlineRedDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ef4444',
   },
-  quickChipText: {
+  inlineListeningText: {
     fontSize: 12,
-    color: '#cbd5e1',
-    fontWeight: '600',
-  },
-
-  // 🎙️ Voice Assistant Modal Styles
-  voiceModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'flex-end',
-  },
-  voiceModalCard: {
-    backgroundColor: '#0f172a',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
-    borderWidth: 1,
-    borderColor: '#334155',
-    maxHeight: '88%',
-  },
-  voiceModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  voiceModalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.white,
-    letterSpacing: 0.3,
-  },
-  voiceModalSub: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  voiceCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1e293b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Hero Voice Card (Tap to Speak)
-  heroVoiceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: 'rgba(2, 132, 199, 0.15)',
-    borderWidth: 1.5,
-    borderColor: '#0284c7',
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 16,
-  },
-  heroMicCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#0284c7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#38bdf8',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  heroVoiceTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 3,
-  },
-  heroVoiceDesc: {
-    fontSize: 12,
-    color: '#93c5fd',
-    lineHeight: 16,
-  },
-
-  // Category Pills
-  categoryPillsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
-  },
-  categoryPill: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  categoryPillActive: {
-    backgroundColor: '#0284c7',
-    borderColor: '#38bdf8',
-  },
-  categoryPillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  categoryPillTextActive: {
-    color: '#ffffff',
     fontWeight: '700',
+    color: '#fca5a5',
   },
-
-  // Voice Query List
-  voiceQueryList: {
-    maxHeight: 280,
-  },
-  voiceQueryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#1e293b',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  voiceQueryIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceQueryRowTitle: {
-    fontSize: 13,
-    color: '#ffffff',
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  voiceQueryRowSub: {
-    fontSize: 11,
-    color: '#94a3b8',
-  },
-  voiceQueryAskBtn: {
+  inlineStopBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    paddingVertical: 5,
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
     paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    paddingVertical: 5,
+    borderRadius: 8,
   },
-  voiceQueryAskText: {
+  inlineStopText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#38bdf8',
-  },
-
-  // Footer Tip
-  voiceGuideFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginTop: 10,
-  },
-  voiceGuideFooterText: {
-    fontSize: 11,
-    color: '#fbbf24',
-    flex: 1,
-    lineHeight: 16,
+    color: '#ef4444',
   },
 });

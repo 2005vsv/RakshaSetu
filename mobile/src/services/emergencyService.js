@@ -53,6 +53,43 @@ class EmergencyService {
     return response.data;
   }
 
+  getPrimaryEmergencyPhone(user) {
+    if (Array.isArray(user?.emergencyContacts)) {
+      for (const contact of user.emergencyContacts) {
+        if (contact?.phone) {
+          const digits = String(contact.phone).replace(/[^0-9+]/g, '').trim();
+          if (digits.length >= 10) return digits;
+        }
+      }
+    }
+    if (user?.emergencyContactPhone) {
+      const digits = String(user.emergencyContactPhone).replace(/[^0-9+]/g, '').trim();
+      if (digits.length >= 10) return digits;
+    }
+    return '';
+  }
+
+  /**
+   * Open native SMS app pre-filled with distress message and emergency contact number
+   */
+  async openNativeSmsApp(phone = '', message = '') {
+    const cleanPhone = String(phone || '').replace(/[^0-9+]/g, '').trim();
+    const encodedBody = encodeURIComponent(message || '');
+    const separator = Platform.OS === 'ios' ? '&' : '?';
+    const url = cleanPhone ? `sms:${cleanPhone}${separator}body=${encodedBody}` : `sms:${separator}body=${encodedBody}`;
+
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        await Linking.openURL(`sms:${separator}body=${encodedBody}`);
+      }
+    } catch (err) {
+      console.warn('Could not launch SMS app:', err.message);
+    }
+  }
+
   /**
    * Dial Emergency Helpline
    */
@@ -110,8 +147,7 @@ class EmergencyService {
     const message = this.formatDistressSms(user, resolvedCoords) + (customNote ? ` Note: ${customNote}` : '');
 
     // Target recipient: registered emergency contact phone
-    const rawContact = user?.emergencyContacts?.[0]?.phone || user?.emergencyContactPhone || '';
-    const cleanPhone = String(rawContact).replace(/[^0-9+]/g, '').trim();
+    const cleanPhone = this.getPrimaryEmergencyPhone(user) || String(user?.emergencyContacts?.[0]?.phone || user?.emergencyContactPhone || '').replace(/[^0-9+]/g, '').trim();
 
     // Create local offline beacon record
     const beaconRecord = {
@@ -121,6 +157,7 @@ class EmergencyService {
       message,
       touristName: user?.name || 'Tourist',
       digitalId: user?.digitalId || 'DIG-TOURIST',
+      emergencyContactPhone: cleanPhone,
       location: resolvedCoords
         ? {
             latitude: Number(resolvedCoords.latitude),
@@ -142,29 +179,28 @@ class EmergencyService {
       console.warn('Could not save offline beacon locally:', storageErr.message);
     }
 
-    // Directly open default SMS app targeting the emergency contact phone number
+    // Automatically sync beacon immediately to backend and admin control room if network is reachable
+    let syncedSuccessfully = false;
     try {
-      if (cleanPhone) {
-        // Direct smsto scheme on Android bypasses chooser/picker dialogs
-        const smsUrl = Platform.OS === 'android'
-          ? `smsto:${cleanPhone}?body=${encodeURIComponent(message)}`
-          : `sms:${cleanPhone}&body=${encodeURIComponent(message)}`;
-
-        await Linking.openURL(smsUrl);
-      } else {
-        // If tourist has not saved an emergency contact phone yet
-        const genericSmsUrl = `sms:?body=${encodeURIComponent(message)}`;
-        await Linking.openURL(genericSmsUrl);
+      const syncResult = await this.syncOfflineIncidents();
+      if (syncResult && syncResult.syncedCount > 0) {
+        syncedSuccessfully = true;
       }
-    } catch (smsErr) {
-      console.warn('Direct SMS open failed:', smsErr.message);
-      Alert.alert('Emergency SMS Beacon Prepared', message);
+    } catch (_) {}
+
+    // Open native Messages app pre-filled with recipient phone and GPS coordinates
+    // User can tap the Send button to dispatch immediately for free via their SIM card
+    try {
+      await this.openNativeSmsApp(cleanPhone, message);
+    } catch (smsAppErr) {
+      console.warn('Could not open Messages app automatically:', smsAppErr.message);
     }
 
-    // Attempt background sync in case faint connection is present
-    this.syncOfflineIncidents().catch(() => {});
-
-    return beaconRecord;
+    return {
+      ...beaconRecord,
+      synced: syncedSuccessfully,
+      cleanPhone,
+    };
   }
 
   /**

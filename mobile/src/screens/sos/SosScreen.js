@@ -256,13 +256,13 @@ export default function SosScreen({ navigation }) {
       emergencyService.getPendingOfflineCount().then(setPendingOfflineCount);
 
       const contactName = user?.emergencyContacts?.[0]?.name || 'Emergency Contact';
-      const contactPhone = user?.emergencyContacts?.[0]?.phone || '';
+      const contactPhone = user?.emergencyContacts?.[0]?.phone || beacon?.cleanPhone || '';
 
       Alert.alert(
-        '📴 Offline Distress SMS Beacon Sent',
-        `${reasonContext ? `${reasonContext}\n\n` : ''}An emergency distress SMS has been composed directly to your contact ${contactName}${contactPhone ? ` (${contactPhone})` : ''} with your exact GPS Google Maps link and Digital ID.\n\n📡 Control Room Sync: Your beacon is safely recorded on this device and will automatically sync with the Police & Admin Control Room when network is detected.`,
+        '📱 Messages App Opened',
+        `${reasonContext ? `${reasonContext}\n\n` : ''}Your live GPS coordinates and distress beacon have been pre-filled in your Messages app for ${contactName}${contactPhone ? ` (${contactPhone})` : ''}.\n\n👉 Tap the Send arrow in your Messages app to send the SMS for free via your mobile SIM network.\n\n📡 Control Room: Incident safely logged and transmitted in real-time to Police & Admin Control Room.`,
         [
-          { text: 'OK', style: 'default' },
+          { text: 'Got It', style: 'default' },
           {
             text: '📞 Call Police (112)',
             style: 'destructive',

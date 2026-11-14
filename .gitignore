@@ -24,6 +24,7 @@ build/
 dist/
 .expo/
 *.keystore
+*.exe
 .pnp
 .pnp.js
 .cache/

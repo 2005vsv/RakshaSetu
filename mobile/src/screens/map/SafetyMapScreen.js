@@ -28,7 +28,7 @@ import emergencyService from '../../services/emergencyService';
 import socketService from '../../services/socketService';
 import { API_ENDPOINTS } from '../../config/api';
 import { STATIC_LEAFLET_HTML } from './leafletTemplate';
-import geocodingService from '../../services/geocodingService';
+import geocodingService, { POPULAR_INDIAN_DESTINATIONS } from '../../services/geocodingService';
 
 const { width } = Dimensions.get('window');
 const RADAR_SIZE = Math.min(width - 40, 280);
@@ -218,6 +218,7 @@ export default function SafetyMapScreen({ navigation }) {
 
   const webViewRef = useRef(null);
   const hasCenteredUser = useRef(false);
+  const lastRouteTripKeyRef = useRef('');
 
   // Radar HUD animations
   const pulseAnim1 = useRef(new Animated.Value(0)).current;
@@ -353,9 +354,18 @@ export default function SafetyMapScreen({ navigation }) {
     }, [fetchActiveTrip])
   );
 
-  // Compute and inject shortest safe route whenever activeTrip and coords are present
+  // Compute and inject shortest safe route when activeTrip changes or map becomes ready
+  // (Decoupled from live GPS coords ticks to prevent pinch-to-zoom auto-resetting)
   useEffect(() => {
-    if (!activeTrip || !mapReady) return;
+    if (!activeTrip || !mapReady) {
+      lastRouteTripKeyRef.current = '';
+      return;
+    }
+
+    const tripKey = `${activeTrip._id || activeTrip.id || ''}_${activeTrip.destination || ''}_${activeTrip.modeOfTravel || ''}`;
+    if (lastRouteTripKeyRef.current === tripKey && tripRouteData) {
+      return;
+    }
 
     let isCancelled = false;
 
@@ -397,6 +407,7 @@ export default function SafetyMapScreen({ navigation }) {
         );
 
         if (isCancelled || !route || !route.geometry) return;
+        lastRouteTripKeyRef.current = tripKey;
         setTripRouteData(route);
 
         // 4. Inject route, destination pin, and optional start pin into Leaflet WebView
@@ -431,7 +442,7 @@ export default function SafetyMapScreen({ navigation }) {
     return () => {
       isCancelled = true;
     };
-  }, [activeTrip, coords, mapReady]);
+  }, [activeTrip, mapReady]);
 
   // Complete active trip and close route direction on map
   const handleCompleteActiveTrip = async () => {
@@ -470,17 +481,28 @@ export default function SafetyMapScreen({ navigation }) {
       setLoadingDestSearch(false);
       return;
     }
+
+    // Instant zero-latency local matching first
+    const instant = POPULAR_INDIAN_DESTINATIONS.filter((it) => {
+      const hay = `${it.name} ${it.displayName} ${it.city} ${it.state}`.toLowerCase();
+      return hay.includes(text.trim().toLowerCase());
+    });
+    if (instant.length > 0) {
+      setDestSuggestions(instant.slice(0, 6));
+    }
+
     setLoadingDestSearch(true);
     destSearchTimer.current = setTimeout(async () => {
       try {
         const items = await geocodingService.searchPlaces(text);
-        setDestSuggestions(items || []);
+        if (Array.isArray(items) && items.length > 0) {
+          setDestSuggestions(items);
+        }
       } catch (_) {
-        setDestSuggestions([]);
       } finally {
         setLoadingDestSearch(false);
       }
-    }, 280);
+    }, 250);
   };
 
   const handleStartChangeText = (text) => {
@@ -491,17 +513,28 @@ export default function SafetyMapScreen({ navigation }) {
       setLoadingStartSearch(false);
       return;
     }
+
+    // Instant zero-latency local matching first
+    const instant = POPULAR_INDIAN_DESTINATIONS.filter((it) => {
+      const hay = `${it.name} ${it.displayName} ${it.city} ${it.state}`.toLowerCase();
+      return hay.includes(text.trim().toLowerCase());
+    });
+    if (instant.length > 0) {
+      setStartSuggestions(instant.slice(0, 6));
+    }
+
     setLoadingStartSearch(true);
     startSearchTimer.current = setTimeout(async () => {
       try {
         const items = await geocodingService.searchPlaces(text);
-        setStartSuggestions(items || []);
+        if (Array.isArray(items) && items.length > 0) {
+          setStartSuggestions(items);
+        }
       } catch (_) {
-        setStartSuggestions([]);
       } finally {
         setLoadingStartSearch(false);
       }
-    }, 280);
+    }, 250);
   };
 
   const handleSelectDestSuggestion = (item) => {
@@ -940,13 +973,13 @@ export default function SafetyMapScreen({ navigation }) {
     setIsFindingHavens(true);
     try {
       Vibration.vibrate([0, 40, 40, 40]);
-      let currentCoords = coords;
+      let currentCoords = await locationService.getCurrentLocation(true);
       if (!currentCoords?.latitude || !currentCoords?.longitude) {
-        currentCoords = await locationService.getCurrentLocation();
-        if (currentCoords) setCoords(currentCoords);
+        currentCoords = coords || locationService.lastLocation;
       }
+      if (currentCoords) setCoords(currentCoords);
 
-      const havens = await safeHavenService.getNearbySafeHavens(currentCoords, 10, 'all');
+      const havens = await safeHavenService.getNearbySafeHavens(currentCoords, 6, 'all');
       setSafeHavens(havens);
       setShowHavensDrawer(true);
 
@@ -960,12 +993,14 @@ export default function SafetyMapScreen({ navigation }) {
       }
 
       if (havens.length > 0) {
+        const maxDist = Math.max(...havens.map(h => h.distanceKm || 0));
+        const radiusNotice = maxDist > 6 ? ` (expanded to ${Math.ceil(maxDist)} km)` : ' (within 6 km radius / 12 km circumference)';
         Alert.alert(
           '🏥 Safe Havens Located',
-          `Found ${havens.length} emergency facilities nearby:\n• 🚓 ${havens.filter(h => h.type === 'police').length} Police Station(s)\n• 🏥 ${havens.filter(h => h.type === 'hospital').length} Hospital(s)\n• 💊 ${havens.filter(h => h.type === 'pharmacy').length} 24/7 Pharmacy(s)\n\nPinned on radar and map with 1-tap Google Navigation.`
+          `Found ${havens.length} emergency facilities nearby${radiusNotice}:\n• 🚓 ${havens.filter(h => h.type === 'police').length} Police Station(s)\n• 🏥 ${havens.filter(h => h.type === 'hospital').length} Hospital(s)\n• 💊 ${havens.filter(h => h.type === 'pharmacy').length} Medical Shop(s) & Chemist(s)\n\nPinned on radar and map with 1-tap Google Navigation.`
         );
       } else {
-        Alert.alert('No Facilities Nearby', 'No safe havens were detected within 5km radius.');
+        Alert.alert('No Facilities Nearby', 'No safe havens were detected within 6 km radius.');
       }
     } catch (err) {
       console.warn('Error finding safe havens:', err);
@@ -1381,7 +1416,12 @@ export default function SafetyMapScreen({ navigation }) {
           <View style={styles.radarHeader}>
             <View style={styles.radarHeaderLeft}>
               <Ionicons name="radio" size={18} color={Colors.primary} />
-              <Text style={styles.radarTitle}>Live Radar Scope</Text>
+              <View>
+                <Text style={styles.radarTitle}>Live Radar Scope</Text>
+                <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: '600' }}>
+                  6 km Radius · 12 km Circumference
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               style={[styles.radarToggleBtn, isLiveTracking && styles.radarToggleBtnActive]}
@@ -1465,41 +1505,53 @@ export default function SafetyMapScreen({ navigation }) {
               </Animated.View>
 
 
-              {/* Safe Haven Radar Blips */}
-              {safeHavens.map((haven) => {
-                if (!coords) return null;
-                const dLat = (haven.latitude - coords.latitude) * 111;
-                const dLng = (haven.longitude - coords.longitude) * 111 * Math.cos((coords.latitude * Math.PI) / 180);
-                const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-                const maxRadiusKm = 10;
-                if (distKm > maxRadiusKm) return null;
-                const factor = (RADAR_SIZE / 2 - 18) / maxRadiusKm;
-                const x = RADAR_SIZE / 2 + dLng * factor;
-                const y = RADAR_SIZE / 2 - dLat * factor;
-                const dotColor = haven.type === 'police' ? '#3b82f6' : haven.type === 'hospital' ? '#ef4444' : '#10b981';
+              {/* Dynamic Radar Range Scaling & Safe Haven Blips (5-6 km radius / 12 km circumference standard) */}
+              {(() => {
+                const maxHavenDistKm = safeHavens.length > 0
+                  ? Math.max(...safeHavens.map((h) => h.distanceKm || 0))
+                  : 6;
+                const radarRadiusKm = Math.max(6, Math.ceil(maxHavenDistKm));
+                const midRadiusKm = Math.round(radarRadiusKm * 0.67);
+                const innerRadiusKm = Math.round(radarRadiusKm * 0.33);
+
                 return (
-                  <TouchableOpacity
-                    key={haven.id}
-                    style={[styles.radarHavenBlip, { left: x - 10, top: y - 10, borderColor: dotColor }]}
-                    onPress={() => handleFocusHaven(haven)}
-                  >
-                    <Text style={styles.radarHavenEmoji}>
-                      {haven.type === 'police' ? '👮' : haven.type === 'hospital' ? '🏥' : '💊'}
-                    </Text>
-                  </TouchableOpacity>
+                  <>
+                    {safeHavens.map((haven) => {
+                      if (!coords) return null;
+                      const dLat = (haven.latitude - coords.latitude) * 111;
+                      const dLng = (haven.longitude - coords.longitude) * 111 * Math.cos((coords.latitude * Math.PI) / 180);
+                      const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+                      if (distKm > radarRadiusKm) return null;
+                      const factor = (RADAR_SIZE / 2 - 18) / radarRadiusKm;
+                      const x = RADAR_SIZE / 2 + dLng * factor;
+                      const y = RADAR_SIZE / 2 - dLat * factor;
+                      const dotColor = haven.type === 'police' ? '#3b82f6' : haven.type === 'hospital' ? '#ef4444' : '#10b981';
+                      return (
+                        <TouchableOpacity
+                          key={haven.id}
+                          style={[styles.radarHavenBlip, { left: x - 10, top: y - 10, borderColor: dotColor }]}
+                          onPress={() => handleFocusHaven(haven)}
+                        >
+                          <Text style={styles.radarHavenEmoji}>
+                            {haven.type === 'police' ? '👮' : haven.type === 'hospital' ? '🏥' : '💊'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    {/* Center User Pin */}
+                    <View style={styles.centerBlipContainer}>
+                      <View style={styles.centerBlipOuter} />
+                      <View style={styles.centerBlipInner} />
+                    </View>
+
+                    {/* Range labels: Outer (6 km), Middle (4 km), Inner (2 km) */}
+                    <Text style={[styles.rangeLabel, { top: 12 }]}>{radarRadiusKm} km</Text>
+                    <Text style={[styles.rangeLabel, { top: RADAR_SIZE * 0.2 }]}>{midRadiusKm} km</Text>
+                    <Text style={[styles.rangeLabel, { top: RADAR_SIZE * 0.32 }]}>{innerRadiusKm} km</Text>
+                  </>
                 );
-              })}
-
-              {/* Center User Pin */}
-              <View style={styles.centerBlipContainer}>
-                <View style={styles.centerBlipOuter} />
-                <View style={styles.centerBlipInner} />
-              </View>
-
-              {/* Range labels */}
-              <Text style={[styles.rangeLabel, { top: 12 }]}>25 km</Text>
-              <Text style={[styles.rangeLabel, { top: RADAR_SIZE * 0.2 }]}>10 km</Text>
-              <Text style={[styles.rangeLabel, { top: RADAR_SIZE * 0.32 }]}>2 km</Text>
+              })()}
             </View>
           </View>
 
@@ -1678,11 +1730,11 @@ export default function SafetyMapScreen({ navigation }) {
                 <View style={styles.havenPhoneRow}>
                   <Ionicons name="call-outline" size={13} color={Colors.textSecondary} />
                   <Text style={styles.havenPhoneText}>
-                    Emergency Line: <Text style={{ color: Colors.white, fontWeight: '700' }}>{haven.phone || haven.directPhone || '112'}</Text>
+                    Emergency Line: <Text style={{ color: Colors.white, fontWeight: '700' }}>{haven.directPhone || haven.phone || '112'}</Text>
                   </Text>
                 </View>
 
-                {/* In-App Navigation & 1-Tap Helpline Call */}
+                {/* In-App Navigation, 1-Tap Helpline Call, & Direct Google Maps */}
                 <View style={styles.havenActionRow}>
                   <TouchableOpacity
                     style={styles.havenNavigateBtn}
@@ -1699,10 +1751,18 @@ export default function SafetyMapScreen({ navigation }) {
 
                   <TouchableOpacity
                     style={styles.havenCallBtn}
-                    onPress={() => safeHavenService.callFacility(haven.phone || haven.directPhone || '112')}
+                    onPress={() => safeHavenService.callFacility(haven.directPhone || haven.phone || '112')}
                   >
                     <Ionicons name="call" size={14} color={Colors.white} style={{ marginRight: 6 }} />
-                    <Text style={styles.havenCallBtnText}>Call Helpline</Text>
+                    <Text style={styles.havenCallBtnText}>Call</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.havenGoogleMapsBtn}
+                    onPress={() => safeHavenService.openInGoogleMaps(haven.name, haven.latitude, haven.longitude)}
+                  >
+                    <Ionicons name="map" size={14} color="#38bdf8" style={{ marginRight: 4 }} />
+                    <Text style={styles.havenGoogleMapsBtnText}>Google</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -2578,7 +2638,7 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   havenNavigateBtn: {
-    flex: 1.6,
+    flex: 1.3,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2590,6 +2650,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: Colors.white,
+  },
+  havenGoogleMapsBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  havenGoogleMapsBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#38bdf8',
   },
   havenFocusMapRow: {
     flexDirection: 'row',

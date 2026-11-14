@@ -1,12 +1,13 @@
 import { Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import apiClient from './apiClient';
 import { API_ENDPOINTS } from '../config/api';
 import notificationService from './notificationService';
 
 // Current installed version in app
-export const CURRENT_APP_VERSION = '1.0.2';
-export const CURRENT_VERSION_CODE = 3;
+export const CURRENT_APP_VERSION = '1.0.3';
+export const CURRENT_VERSION_CODE = 4;
 
 const DISMISSED_UPDATE_KEY = '@rakshasetu_dismissed_update';
 
@@ -124,11 +125,10 @@ class UpdateService {
    * Downloads the APK file internally into app cache and launches the Android installer
    */
   async downloadAndInstallUpdate(url, onProgress) {
-    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.1/RakshaSetu.apk';
+    const targetUrl = url || this.updateInfo?.downloadUrl || 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.3/RakshaSetu.apk';
 
     try {
-      const FileSystem = require('expo-file-system');
-      const destination = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}RakshaSetu_v1.0.1.apk`;
+      const destination = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}RakshaSetu_v1.0.3.apk`;
 
       // Clean old temp APK if present
       try {
@@ -167,8 +167,13 @@ class UpdateService {
 
       // Launch native Android package installer directly on screen
       if (Platform.OS === 'android') {
-        const contentUri = await FileSystem.getContentUriAsync(localUri);
-        await Linking.openURL(contentUri);
+        try {
+          const contentUri = await FileSystem.getContentUriAsync(localUri);
+          await Linking.openURL(contentUri);
+        } catch (contentErr) {
+          console.warn('getContentUriAsync error, falling back to localUri/targetUrl:', contentErr.message);
+          await Linking.openURL(localUri).catch(() => Linking.openURL(targetUrl));
+        }
       } else {
         await Linking.openURL(targetUrl);
       }

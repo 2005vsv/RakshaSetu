@@ -3,12 +3,10 @@ const { parseDistanceQuery, calculateDistanceReport } = require('./distanceServi
 const { findCityGuide, formatCityGuideReport, generateDynamicTourismGuide } = require('../data/cityGuides');
 
 const CANDIDATE_MODELS = [
-  'gemini-1.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-1.5-pro',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-flash-lite-latest',
+  'gemini-3.8-flash',
 ];
 
 /**
@@ -31,7 +29,7 @@ async function generateSafetyResponse({ userQuery = '', context = {}, history = 
   let modelUsed = 'smart-engine';
 
   // 1. Check if query is a distance query first (Fast and 100% accurate)
-  const distanceParams = parseDistanceQuery(queryStr, safeContext);
+  const distanceParams = await parseDistanceQuery(queryStr, safeContext);
   if (distanceParams) {
     try {
       rawText = calculateDistanceReport(distanceParams.origin, distanceParams.destination);
@@ -42,7 +40,7 @@ async function generateSafetyResponse({ userQuery = '', context = {}, history = 
   }
 
   // 2. Query Google Gemini if a valid key is provided
-  const isStandardGeminiKey = Boolean(apiKey && (apiKey.startsWith('AIzaSy') || apiKey.length === 39));
+  const isStandardGeminiKey = Boolean(apiKey && apiKey.trim().length > 15);
 
   if (!rawText && apiKey) {
     if (!isStandardGeminiKey) {
@@ -147,7 +145,7 @@ async function generateSafetyResponse({ userQuery = '', context = {}, history = 
 
   // 4. Universal Built-in Intelligent Fallback Engine
   if (!rawText) {
-    rawText = generateSmartLocalFallback(queryStr, safeContext);
+    rawText = await generateSmartLocalFallback(queryStr, safeContext);
     modelUsed = 'universal-knowledge-engine';
   }
 
@@ -253,7 +251,7 @@ function parseResponseTags(text = '', context = {}) {
  * - Emergency & helplines with live telemetry
  * - General knowledge & culture
  */
-function generateSmartLocalFallback(query = '', context = {}) {
+async function generateSmartLocalFallback(query = '', context = {}) {
   const safeContext = context || {};
   const q = String(query || '').toLowerCase().trim();
   const { currentZone, nearestHospital, nearestPolice, nearestPharmacy } = safeContext;
@@ -270,8 +268,8 @@ function generateSmartLocalFallback(query = '', context = {}) {
   const pharmDist = formatDist(nearestPharmacy);
 
   // 1. Check Distance Queries
-  const distanceParams = parseDistanceQuery(q, safeContext);
-  if (distanceParams) {
+  const distanceParams = await parseDistanceQuery(q, safeContext);
+  if (distanceParams?.origin && distanceParams?.destination) {
     return calculateDistanceReport(distanceParams.origin, distanceParams.destination);
   }
 

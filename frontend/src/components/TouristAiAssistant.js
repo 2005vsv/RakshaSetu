@@ -430,21 +430,6 @@ export default function TouristAiAssistant({ user, currentLocation, sendAlert })
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Prompts Carousel */}
-      <div style={styles.quickChipsBar}>
-        {quickChips.map((chip, idx) => (
-          <button
-            key={idx}
-            type="button"
-            style={styles.quickChip}
-            onClick={() => handleSend(chip)}
-            disabled={isLoading}
-          >
-            {chip}
-          </button>
-        ))}
-      </div>
-
       {/* Input Bar with 🎙️ Mic Voice Search */}
       <div style={styles.inputArea}>
         <button

@@ -36,6 +36,7 @@ export default function InAppNavigationScreen({ route, navigation }) {
 
   const webViewRef = useRef(null);
   const isMountedRef = useRef(true);
+  const routeInjectedKeyRef = useRef('');
 
   // Facility Info with Safe Defaults
   const destFacility = useMemo(() => {
@@ -52,8 +53,8 @@ export default function InAppNavigationScreen({ route, navigation }) {
       name: facility?.name || 'Emergency Safe Haven',
       typeName: facility?.typeName || defaultTypeName,
       type: fType,
-      address: facility?.address || 'Belagavi, Karnataka',
-      phone: facility?.phone || facility?.directPhone || '112',
+      address: facility?.address || 'Verified Safe Haven',
+      phone: facility?.directPhone || facility?.phone || '112',
       latitude: Number(facility?.latitude) || 15.81498,
       longitude: Number(facility?.longitude) || 74.49122,
     };
@@ -171,15 +172,21 @@ export default function InAppNavigationScreen({ route, navigation }) {
   }, []);
 
   // When map becomes ready, push cached route if available
+  // Decoupled from userCoords ticks to prevent zoom auto-resetting when user zooms in
   useEffect(() => {
     if (mapReady && routeData && userCoords) {
-      injectRouteToMap(routeData, userCoords.latitude, userCoords.longitude);
+      const currentRouteKey = `${routeData.distanceMeters || ''}_${travelMode}_${destFacility?.id || ''}`;
+      if (routeInjectedKeyRef.current !== currentRouteKey) {
+        routeInjectedKeyRef.current = currentRouteKey;
+        injectRouteToMap(routeData, userCoords.latitude, userCoords.longitude);
+      }
     }
-  }, [mapReady, routeData, userCoords, injectRouteToMap]);
+  }, [mapReady, routeData, travelMode, destFacility, injectRouteToMap]);
 
   // Mode Toggle (Driving / Walking)
   const handleToggleMode = (newMode) => {
     if (newMode === travelMode) return;
+    routeInjectedKeyRef.current = '';
     setTravelMode(newMode);
 
     // Instantly update duration & ETA for the selected travel mode
@@ -215,12 +222,12 @@ export default function InAppNavigationScreen({ route, navigation }) {
     }
   };
 
-  // Fit Entire Route on Map
+  // Fit Entire Route on Map (explicit user action forces route re-fit)
   const handleFitRoute = () => {
     if (webViewRef.current) {
       webViewRef.current.injectJavaScript(`
         if (typeof window.fitRouteBounds === 'function') {
-          window.fitRouteBounds();
+          window.fitRouteBounds(true);
         }
         true;
       `);
@@ -377,6 +384,13 @@ export default function InAppNavigationScreen({ route, navigation }) {
         }
       });
 
+      var userHasInteracted = false;
+      map.on('movestart zoomstart dragstart touchstart', function(e) {
+        if (e && e.originalEvent) {
+          userHasInteracted = true;
+        }
+      });
+
       setTimeout(function() { if (map) map.invalidateSize(); }, 200);
       setTimeout(function() { if (map) map.invalidateSize(); }, 600);
 
@@ -466,10 +480,15 @@ export default function InAppNavigationScreen({ route, navigation }) {
       });
       destMarker = L.marker([dLat, dLng], { icon: destIcon, zIndexOffset: 900 }).addTo(map);
 
-      window.fitRouteBounds();
+      if (!userHasInteracted) {
+        window.fitRouteBounds();
+      }
     };
 
-    window.fitRouteBounds = function() {
+    window.fitRouteBounds = function(force) {
+      if (force) {
+        userHasInteracted = false;
+      }
       if (!map || routeCoordsCache.length === 0) return;
       var bounds = L.latLngBounds(routeCoordsCache);
       map.fitBounds(bounds, {
@@ -487,6 +506,7 @@ export default function InAppNavigationScreen({ route, navigation }) {
     };
 
     window.recenterNavMap = function(lat, lng) {
+      userHasInteracted = false;
       if (map) {
         map.flyTo([lat, lng], 17, { animate: true, duration: 0.8 });
       }

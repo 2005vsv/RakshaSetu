@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../theme/colors';
 import apiClient from '../../services/apiClient';
 import { API_ENDPOINTS } from '../../config/api';
-import geocodingService from '../../services/geocodingService';
+import geocodingService, { POPULAR_INDIAN_DESTINATIONS } from '../../services/geocodingService';
 
 const travelModes = [
   { key: 'car', label: 'Car', icon: 'car-outline' },
@@ -55,39 +55,71 @@ export default function TripsScreen({ navigation }) {
   const [destSuggestions, setDestSuggestions] = useState([]);
   const [isSearchingStart, setIsSearchingStart] = useState(false);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
+  const startTimer = useRef(null);
+  const destTimer = useRef(null);
 
-  const handleStartTextChange = async (text) => {
+  const handleStartTextChange = (text) => {
     setStartPoint(text);
+    if (startTimer.current) clearTimeout(startTimer.current);
     if (!text || text.trim().length < 2) {
       setStartSuggestions([]);
+      setIsSearchingStart(false);
       return;
     }
-    try {
-      setIsSearchingStart(true);
-      const results = await geocodingService.searchPlaces(text);
-      setStartSuggestions(Array.isArray(results) ? results.slice(0, 5) : []);
-    } catch (_) {
-      setStartSuggestions([]);
-    } finally {
-      setIsSearchingStart(false);
+
+    // Instant zero-latency local matching first
+    const instant = POPULAR_INDIAN_DESTINATIONS.filter((it) => {
+      const hay = `${it.name} ${it.displayName} ${it.city} ${it.state}`.toLowerCase();
+      return hay.includes(text.trim().toLowerCase());
+    });
+    if (instant.length > 0) {
+      setStartSuggestions(instant.slice(0, 5));
     }
+
+    setIsSearchingStart(true);
+    startTimer.current = setTimeout(async () => {
+      try {
+        const results = await geocodingService.searchPlaces(text);
+        if (Array.isArray(results) && results.length > 0) {
+          setStartSuggestions(results.slice(0, 5));
+        }
+      } catch (_) {
+      } finally {
+        setIsSearchingStart(false);
+      }
+    }, 250);
   };
 
-  const handleDestTextChange = async (text) => {
+  const handleDestTextChange = (text) => {
     setDestination(text);
+    if (destTimer.current) clearTimeout(destTimer.current);
     if (!text || text.trim().length < 2) {
       setDestSuggestions([]);
+      setIsSearchingDest(false);
       return;
     }
-    try {
-      setIsSearchingDest(true);
-      const results = await geocodingService.searchPlaces(text);
-      setDestSuggestions(Array.isArray(results) ? results.slice(0, 5) : []);
-    } catch (_) {
-      setDestSuggestions([]);
-    } finally {
-      setIsSearchingDest(false);
+
+    // Instant zero-latency local matching first
+    const instant = POPULAR_INDIAN_DESTINATIONS.filter((it) => {
+      const hay = `${it.name} ${it.displayName} ${it.city} ${it.state}`.toLowerCase();
+      return hay.includes(text.trim().toLowerCase());
+    });
+    if (instant.length > 0) {
+      setDestSuggestions(instant.slice(0, 5));
     }
+
+    setIsSearchingDest(true);
+    destTimer.current = setTimeout(async () => {
+      try {
+        const results = await geocodingService.searchPlaces(text);
+        if (Array.isArray(results) && results.length > 0) {
+          setDestSuggestions(results.slice(0, 5));
+        }
+      } catch (_) {
+      } finally {
+        setIsSearchingDest(false);
+      }
+    }, 250);
   };
 
   const selectStartPlace = (item) => {

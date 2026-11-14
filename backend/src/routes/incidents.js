@@ -149,11 +149,54 @@ router.post("/offline-beacon", async (req, res) => {
       io?.emit("alert:new", alertPayload);
     }
 
+    // Automatically dispatch distress SMS directly to registered emergency contacts (parity with admin auto-dispatch)
+    let smsResults = [];
+    try {
+      const smsService = require("../services/smsService");
+      const contactPhones = [];
+      if (Array.isArray(touristUser.emergencyContacts)) {
+        touristUser.emergencyContacts.forEach((c) => {
+          if (c?.phone && !contactPhones.includes(c.phone)) contactPhones.push(c.phone);
+        });
+      }
+      if (Array.isArray(req.body.recipients)) {
+        req.body.recipients.forEach((p) => {
+          if (p && typeof p === 'string' && !contactPhones.includes(p) && p !== 'Emergency Family Contact') {
+            contactPhones.push(p);
+          }
+        });
+      }
+      if (req.body.emergencyContactPhone && !contactPhones.includes(req.body.emergencyContactPhone)) {
+        contactPhones.push(req.body.emergencyContactPhone);
+      }
+
+      const dispatchPromises = contactPhones.map(async (phone) => {
+        try {
+          const res = await smsService.sendDistressAlert(
+            phone,
+            touristName,
+            digitalId,
+            hasCoords ? { latitude: Number(lat), longitude: Number(lng) } : null,
+            rawMessage
+          );
+          return { phone, ...res };
+        } catch (err) {
+          console.warn(`Offline beacon SMS to ${phone} warning:`, err.message);
+          return { phone, success: false, error: err.message };
+        }
+      });
+      const smsResults = await Promise.all(dispatchPromises);
+      console.log(`[SMS Gateway Result] Processed ${smsResults.length} distress alerts:`, JSON.stringify(smsResults));
+    } catch (smsErr) {
+      console.warn("Offline beacon emergency contacts SMS dispatch warning:", smsErr.message);
+    }
+
     res.status(201).json({
       success: true,
       synced: true,
       incident: incident.toObject(),
       alert: alertDoc ? alertDoc.toObject() : null,
+      smsDispatched: smsResults,
     });
   } catch (err) {
     console.error("Offline beacon sync error:", err);
