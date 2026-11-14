@@ -76,22 +76,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/heads/main')
         with:
-          tag_name: v1.0.2
-          name: "RakshaSetu Tourist Safety v1.0.2 Standalone Android APK"
+          tag_name: v1.0.3
+          name: "RakshaSetu Tourist Safety v1.0.3 Standalone Android APK"
           body: |
             ### 🛡️ RakshaSetu - Standalone Android Application (.apk)
 
-            **Official Project Submission Build**
+            **Official Project Submission Build v1.0.3**
 
             #### ✨ Key Features in this Build:
-            - **24/7 Cloud Connectivity:** Pre-configured with live Render cloud backend (`https://rakshasetu-backend-4775.onrender.com`).
-            - **Real-Time Android Notifications:** Instant system alerts in the top notification tray for:
-              - ⚠️ High-Risk and Restricted Zone creations.
-              - 📢 Official safety announcements.
-              - 🚓 Police dispatch confirmations & status updates.
-              - 💬 Admin support ticket replies.
-            - **One-Tap SOS & Offline Cellular Beacon:** Instant emergency alerting even without mobile data.
-            - **Real-Time Tourist Safety Radar:** Safe havens, live routing avoiding danger zones, and digital tourist ID verification.
+            - 🎙️ **Voice AI Chatbot:** Real-time voice-to-text with Gemini 3.5 Transcribe.
+            - 🗺️ **Accurate Road Routing:** Turn-by-turn road curves on map (no straight lines).
+            - 🔍 **Google Maps Autocomplete:** Instant place suggestions for 100+ Indian cities.
+            - 📋 **My Plans:** Fixed trip planner with live destination suggestions.
+            - ⚡ **In-App Auto-Updater:** Direct in-app download with live progress bar.
 
             #### 📲 Installation Instructions:
             1. Download `RakshaSetu.apk` directly onto your Android device.
