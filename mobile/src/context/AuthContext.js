@@ -30,6 +30,16 @@ export const AuthProvider = ({ children }) => {
           setUser(savedUser);
           await socketService.connect();
           locationService.startTracking();
+
+          // Check if token is still valid on backend
+          apiClient.get(API_ENDPOINTS.ME).catch((err) => {
+            if (err.message?.includes('Invalid token') || err.message?.includes('Authentication required') || err.message?.includes('inactive')) {
+              console.warn('[AuthContext] Session token expired. Prompting fresh login.');
+              clearAuthSession().catch(() => {});
+              setUser(null);
+              setToken(null);
+            }
+          });
         }
       } catch (e) {
         console.warn('Failed to restore auth session:', e);

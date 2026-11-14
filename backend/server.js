@@ -129,7 +129,7 @@ app.use("/chat", chatRoutes);
 app.use("/anomalies", anomaliesRoutes);
 app.use("/police", policeRoutes);
 app.use("/updates", updatesRoutes);
-app.get("/announcements", authMiddleware, async (_req, res) => {
+app.get("/announcements", async (_req, res) => {
   try { res.json(await Announcement.find({ published: true }).sort({ createdAt: -1 }).limit(50).lean()); }
   catch { res.status(500).json({ error: "Could not load safety announcements" }); }
 });

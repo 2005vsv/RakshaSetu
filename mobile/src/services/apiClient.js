@@ -94,6 +94,12 @@ apiClient.interceptors.response.use(
       error.response?.data?.message ||
       error.message ||
       'Network request failed';
+
+    // If server reports token is expired or invalid, clear stale token so app can refresh session
+    if (error.response?.status === 401 && (String(message).includes('Invalid token') || String(message).includes('Authentication required'))) {
+      AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
+    }
+
     return Promise.reject(new Error(message));
   }
 );

@@ -4,8 +4,7 @@ const auth = require("../middleware/auth");
 const { validateGeometry, parseWkt } = require("../utils/polygon");
 const AuditLog = require("../models/AuditLog");
 
-router.use(auth);
-
+// Public read endpoint for geofences (safety risk zones must be visible to all tourists)
 router.get("/", async (req, res) => {
   try {
     const filter = req.query.only_active === "false" ? {} : { is_active: true };
@@ -14,6 +13,9 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Could not load geofences" });
   }
 });
+
+// Mutating routes require authentication
+router.use(auth);
 
 router.post("/", async (req, res) => {
   const geometry = req.body.geometry || parseWkt(req.body.wkt_polygon);
