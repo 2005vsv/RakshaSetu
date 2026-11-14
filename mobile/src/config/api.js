@@ -1,8 +1,11 @@
 import { Platform } from 'react-native';
 
+// Live production Render cloud backend:
+export const PRODUCTION_RENDER_URL = 'https://rakshasetu-backend-4775.onrender.com';
+
 // Set to true when testing outside on mobile data (cellular 4G/5G) or remote networks:
 export const USE_TUNNEL = true;
-export const PUBLIC_TUNNEL_URL = 'https://beer-flashing-pointer-combination.trycloudflare.com';
+export const PUBLIC_TUNNEL_URL = PRODUCTION_RENDER_URL;
 
 // Current PC Wi-Fi IP and backend port (for same local Wi-Fi network):
 export const PC_WIFI_IP = '192.168.1.2';
@@ -15,8 +18,7 @@ export const getDefaultBaseUrl = () => {
   if (USE_TUNNEL && PUBLIC_TUNNEL_URL) {
     return PUBLIC_TUNNEL_URL;
   }
-  // Physical devices connected to Wi-Fi can directly reach the PC's Wi-Fi IP:
-  return `http://${PC_WIFI_IP}:${BACKEND_PORT}`;
+  return PRODUCTION_RENDER_URL;
 };
 
 export const API_ENDPOINTS = {

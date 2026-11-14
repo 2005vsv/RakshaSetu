@@ -15,7 +15,7 @@ export const getStoredBaseUrl = async () => {
       return PUBLIC_TUNNEL_URL;
     }
     const saved = await AsyncStorage.getItem(BASE_URL_KEY);
-    if (saved && !saved.includes('172.29.166.170') && !saved.includes('192.168.1.6')) {
+    if (saved && !saved.includes('172.29.166.170') && !saved.includes('192.168.1.6') && !saved.includes('trycloudflare.com')) {
       customBaseUrl = saved;
       return saved;
     }
@@ -60,7 +60,7 @@ apiClient.interceptors.request.use(
       } else {
         if (!customBaseUrl) {
           const url = await AsyncStorage.getItem(BASE_URL_KEY);
-          if (url && !url.includes('172.29.166.170') && !url.includes('192.168.1.6')) {
+          if (url && !url.includes('172.29.166.170') && !url.includes('192.168.1.6') && !url.includes('trycloudflare.com')) {
             customBaseUrl = url;
           }
         }

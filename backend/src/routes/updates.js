@@ -4,20 +4,19 @@ const Announcement = require('../models/Announcement');
 
 // Current official release configuration
 const APP_RELEASE_CONFIG = {
-  latestVersion: '1.0.3',
-  latestVersionCode: 4,
+  latestVersion: '1.0.2',
+  latestVersionCode: 2,
   minSupportedVersion: '1.0.0',
-  title: 'RakshaSetu v1.0.3 Update Available',
+  title: 'RakshaSetu v1.0.2',
   releaseDate: 'November 2026',
   releaseNotes: [
     '🎙️ Voice AI Chatbot: Instant voice-to-text with Gemini 3.5 Transcribe.',
     '🗺️ Accurate Road Routing: True turn-by-turn road routes on the map (no straight lines).',
     '🔍 Google Maps Autocomplete: Instant place suggestions with 100+ Indian cities.',
-    '📋 My Plans Trip Planner: Fixed useRef error and improved live search.',
-    '⚡ In-App Auto-Updater: Direct in-app download with live progress bar.'
+    '📋 My Plans Trip Planner: Fixed useRef error and improved live search.'
   ],
-  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.3/RakshaSetu.apk',
-  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.3',
+  downloadUrl: 'https://github.com/2005vsv/RakshaSetu/releases/download/v1.0.2/RakshaSetu.apk',
+  releasePageUrl: 'https://github.com/2005vsv/RakshaSetu/releases/tag/v1.0.2',
   forceUpdate: false,
 };
 
